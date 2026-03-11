@@ -1,0 +1,331 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="ソース ファイル">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="ヘッダー ファイル">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
+    </Filter>
+    <Filter Include="リソース ファイル">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="ソース ファイル\Engine">
+      <UniqueIdentifier>{628ade1d-4a4b-48f7-99b7-60bcde5c9a8f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ヘッダー ファイル\Engine">
+      <UniqueIdentifier>{efa0eade-f8e6-4ab0-8df3-237faf60d77d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ソース ファイル\Engine\Core">
+      <UniqueIdentifier>{368e400f-0017-4f8b-af3a-80fe9c136151}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ヘッダー ファイル\Engine\Core">
+      <UniqueIdentifier>{7dd3d71b-59d0-4f13-9823-3c998bb19108}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ソース ファイル\Engine\Graphics">
+      <UniqueIdentifier>{b9f35bed-d1e8-4d6e-9c35-5b9f6a4c24fb}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ヘッダー ファイル\Engine\Graphics">
+      <UniqueIdentifier>{7eda1a2e-dc78-4b81-bde1-9df4531a744b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ソース ファイル\Engine\Collision">
+      <UniqueIdentifier>{39c80523-ecf0-4eb0-9790-ff02bd3d0e53}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ヘッダー ファイル\Engine\Collision">
+      <UniqueIdentifier>{55ae2d59-b634-49e1-8142-10ad4423d70c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ソース ファイル\Engine\Input">
+      <UniqueIdentifier>{a1b2c3d4-e5f6-7890-abcd-ef0123456789}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ヘッダー ファイル\Engine\Input">
+      <UniqueIdentifier>{b2c3d4e5-f6a7-8901-bcde-f01234567890}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ソース ファイル\Game">
+      <UniqueIdentifier>{c3d4e5f6-a7b8-9012-cdef-012345678901}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ヘッダー ファイル\Game">
+      <UniqueIdentifier>{d4e5f6a7-b8c9-0123-defa-123456789012}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ソース ファイル\Game\Objects">
+      <UniqueIdentifier>{e5f6a7b8-c9d0-1234-efab-234567890123}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ヘッダー ファイル\Game\Objects">
+      <UniqueIdentifier>{f6a7b8c9-d0e1-2345-fabc-345678901234}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ソース ファイル\Game\Map">
+      <UniqueIdentifier>{a7b8c9d0-e1f2-3456-abcd-456789012345}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ヘッダー ファイル\Game\Map">
+      <UniqueIdentifier>{b8c9d0e1-f2a3-4567-bcde-567890123456}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ソース ファイル\Game\Managers">
+      <UniqueIdentifier>{c9d0e1f2-a3b4-5678-cdef-678901234567}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ヘッダー ファイル\Game\Managers">
+      <UniqueIdentifier>{d0e1f2a3-b4c5-6789-defa-789012345678}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ソース ファイル\NetWork">
+      <UniqueIdentifier>{8578f028-9c84-4678-89ae-2dc0582dc9a4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ヘッダー ファイル\NetWork">
+      <UniqueIdentifier>{2193ac62-af4b-464c-9843-3f64268a78ee}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="シェーダーファイル">
+      <UniqueIdentifier>{5dd9ca75-cba2-41d1-ac23-c5e642fa4737}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ソース ファイル\external">
+      <UniqueIdentifier>{e1f2a3b4-c5d6-7890-efab-890123456789}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ヘッダー ファイル\external">
+      <UniqueIdentifier>{f2a3b4c5-d6e7-8901-fabc-901234567890}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="pch.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="main.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Core\renderer.h">
+      <Filter>ヘッダー ファイル\Engine\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Core\timer.h">
+      <Filter>ヘッダー ファイル\Engine\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Core\types.h">
+      <Filter>ヘッダー ファイル\Engine\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Input\keyboard.h">
+      <Filter>ヘッダー ファイル\Engine\Input</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Input\mouse.h">
+      <Filter>ヘッダー ファイル\Engine\Input</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Input\game_controller.h">
+      <Filter>ヘッダー ファイル\Engine\Input</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Input\input_manager.h">
+      <Filter>ヘッダー ファイル\Engine\Input</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Graphics\vertex.h">
+      <Filter>ヘッダー ファイル\Engine\Graphics</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Graphics\material.h">
+      <Filter>ヘッダー ファイル\Engine\Graphics</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Graphics\mesh.h">
+      <Filter>ヘッダー ファイル\Engine\Graphics</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Graphics\mesh_factory.h">
+      <Filter>ヘッダー ファイル\Engine\Graphics</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Graphics\primitive.h">
+      <Filter>ヘッダー ファイル\Engine\Graphics</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Graphics\sprite_2d.h">
+      <Filter>ヘッダー ファイル\Engine\Graphics</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Graphics\sprite_3d.h">
+      <Filter>ヘッダー ファイル\Engine\Graphics</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Graphics\texture_loader.h">
+      <Filter>ヘッダー ファイル\Engine\Graphics</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Graphics\model_data.h">
+      <Filter>ヘッダー ファイル\Engine\Graphics</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Collision\collider.h">
+      <Filter>ヘッダー ファイル\Engine\Collision</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Collision\box_collider.h">
+      <Filter>ヘッダー ファイル\Engine\Collision</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Collision\sphere_collider.h">
+      <Filter>ヘッダー ファイル\Engine\Collision</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Collision\collision_system.h">
+      <Filter>ヘッダー ファイル\Engine\Collision</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Collision\map_collision.h">
+      <Filter>ヘッダー ファイル\Engine\Collision</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Collision\collision_manager.h">
+      <Filter>ヘッダー ファイル\Engine\Collision</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\engine.h">
+      <Filter>ヘッダー ファイル\Engine</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\system.h">
+      <Filter>ヘッダー ファイル\Engine</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\game.h">
+      <Filter>ヘッダー ファイル\Game</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\game_manager.h">
+      <Filter>ヘッダー ファイル\Game</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\Objects\game_object.h">
+      <Filter>ヘッダー ファイル\Game\Objects</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\Objects\player.h">
+      <Filter>ヘッダー ファイル\Game\Objects</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\Objects\bullet.h">
+      <Filter>ヘッダー ファイル\Game\Objects</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\Objects\camera.h">
+      <Filter>ヘッダー ファイル\Game\Objects</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\Objects\gun.h">
+      <Filter>ヘッダー ファイル\Game\Objects</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\Map\map.h">
+      <Filter>ヘッダー ファイル\Game\Map</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\Map\map_renderer.h">
+      <Filter>ヘッダー ファイル\Game\Map</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\Managers\player_manager.h">
+      <Filter>ヘッダー ファイル\Game\Managers</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\Managers\bullet_manager.h">
+      <Filter>ヘッダー ファイル\Game\Managers</Filter>
+    </ClInclude>
+    <ClInclude Include="NetWork\network_common.h">
+      <Filter>ヘッダー ファイル\NetWork</Filter>
+    </ClInclude>
+    <ClInclude Include="NetWork\network_manager.h">
+      <Filter>ヘッダー ファイル\NetWork</Filter>
+    </ClInclude>
+    <ClInclude Include="NetWork\udp_network.h">
+      <Filter>ヘッダー ファイル\NetWork</Filter>
+    </ClInclude>
+    <ClInclude Include="external\WICTextureLoader11.h">
+      <Filter>ヘッダー ファイル\external</Filter>
+    </ClInclude>
+    <ClInclude Include="external\DirectXTex.h">
+      <Filter>ヘッダー ファイル\external</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="pch.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="main.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Core\renderer.cpp">
+      <Filter>ソース ファイル\Engine\Core</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Core\timer.cpp">
+      <Filter>ソース ファイル\Engine\Core</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Input\keyboard.cpp">
+      <Filter>ソース ファイル\Engine\Input</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Input\mouse.cpp">
+      <Filter>ソース ファイル\Engine\Input</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Input\game_controller.cpp">
+      <Filter>ソース ファイル\Engine\Input</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Input\input_manager.cpp">
+      <Filter>ソース ファイル\Engine\Input</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Graphics\material.cpp">
+      <Filter>ソース ファイル\Engine\Graphics</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Graphics\mesh.cpp">
+      <Filter>ソース ファイル\Engine\Graphics</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Graphics\mesh_factory.cpp">
+      <Filter>ソース ファイル\Engine\Graphics</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Graphics\primitive.cpp">
+      <Filter>ソース ファイル\Engine\Graphics</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Graphics\sprite_2d.cpp">
+      <Filter>ソース ファイル\Engine\Graphics</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Graphics\sprite_3d.cpp">
+      <Filter>ソース ファイル\Engine\Graphics</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Graphics\texture_loader.cpp">
+      <Filter>ソース ファイル\Engine\Graphics</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Collision\box_collider.cpp">
+      <Filter>ソース ファイル\Engine\Collision</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Collision\sphere_collider.cpp">
+      <Filter>ソース ファイル\Engine\Collision</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Collision\collision_system.cpp">
+      <Filter>ソース ファイル\Engine\Collision</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Collision\map_collision.cpp">
+      <Filter>ソース ファイル\Engine\Collision</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\system.cpp">
+      <Filter>ソース ファイル\Engine</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\game.cpp">
+      <Filter>ソース ファイル\Game</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\game_manager.cpp">
+      <Filter>ソース ファイル\Game</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\Objects\game_object.cpp">
+      <Filter>ソース ファイル\Game\Objects</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\Objects\player.cpp">
+      <Filter>ソース ファイル\Game\Objects</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\Objects\bullet.cpp">
+      <Filter>ソース ファイル\Game\Objects</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\Objects\camera.cpp">
+      <Filter>ソース ファイル\Game\Objects</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\Objects\gun.cpp">
+      <Filter>ソース ファイル\Game\Objects</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\Map\map.cpp">
+      <Filter>ソース ファイル\Game\Map</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\Map\map_renderer.cpp">
+      <Filter>ソース ファイル\Game\Map</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\Managers\player_manager.cpp">
+      <Filter>ソース ファイル\Game\Managers</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\Managers\bullet_manager.cpp">
+      <Filter>ソース ファイル\Game\Managers</Filter>
+    </ClCompile>
+    <ClCompile Include="NetWork\network_manager.cpp">
+      <Filter>ソース ファイル\NetWork</Filter>
+    </ClCompile>
+    <ClCompile Include="NetWork\udp_network.cpp">
+      <Filter>ソース ファイル\NetWork</Filter>
+    </ClCompile>
+    <ClCompile Include="external\WICTextureLoader11.cpp">
+      <Filter>ソース ファイル\external</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="x64\Release\netWorkLog.txt">
+      <Filter>リソース ファイル</Filter>
+    </Text>
+    <Text Include="x64\Release\dx_netlog.txt">
+      <Filter>リソース ファイル</Filter>
+    </Text>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="shader.hlsl">
+      <Filter>シェーダーファイル</Filter>
+    </None>
+  </ItemGroup>
+</Project>
