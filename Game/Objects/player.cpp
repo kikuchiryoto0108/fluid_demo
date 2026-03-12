@@ -26,11 +26,8 @@ namespace Game {
 // コンストラクタ
 //==========================================================
 Player::Player()
-    : position(0.0f, 3.0f, 0.0f)
+    : GameObjectBase()  // 基底クラスのコンストラクタを呼び出す
     , velocity(0.0f, 0.0f, 0.0f)
-    , rotation(0.0f, 0.0f, 0.0f)
-    , scale(WIDTH, HEIGHT, DEPTH)
-    , m_collisionId(0)
     , hp(MAX_HP)            // 最大HP(10)で初期化
     , isAlive(true)
     , isGrounded(false)
@@ -40,19 +37,20 @@ Player::Player()
     , cameraYaw(0.0f)
     , cameraPitch(0.0f) {
     DebugLog("[Player::Player] Constructor called\n");
-    collider.SetCenter(position);
-    collider.SetSize(scale);
+    // 初期位置・スケールを設定（GameObjectBaseのメンバ）
+    m_position = XMFLOAT3(0.0f, 3.0f, 0.0f);
+    m_scale = XMFLOAT3(WIDTH, HEIGHT, DEPTH);
+    m_collider.SetCenter(m_position);
+    m_collider.SetSize(m_scale);
 }
 
 //==========================================================
 // デストラクタ
+// 基底クラスのデストラクタでCollisionSystemから自動解除
 //==========================================================
 Player::~Player() {
     DebugLog("[Player::~Player] Destructor called for player %d\n", playerId);
-    if (m_collisionId != 0) {
-        Engine::CollisionSystem::GetInstance().Unregister(m_collisionId);
-        m_collisionId = 0;
-    }
+    // 基底クラスのデストラクタで自動的にUnregisterCollider()が呼ばれる
 }
 
 //==========================================================
@@ -67,28 +65,23 @@ void Player::Initialize(Map* map, ID3D11ShaderResourceView* texture, int id, Vie
 
     // Player2は少しずらした位置に配置
     if (playerId == 2) {
-        position = XMFLOAT3(3.0f, 3.0f, 0.0f);
+        m_position = XMFLOAT3(3.0f, 3.0f, 0.0f);
     }
 
     DebugLog("[Player::Initialize] Setting up visual object\n");
     // --- 見た目用GameObjectの初期化 ---
-    visualObject.position = position;
-    visualObject.scale = scale;
-    visualObject.rotation = rotation;
+    visualObject.position = m_position;
+    visualObject.scale = m_scale;
+    visualObject.rotation = m_rotation;
     visualObject.setMesh(Box, 36, texture);
-    visualObject.setBoxCollider(scale);
+    visualObject.setBoxCollider(m_scale);
     visualObject.markBufferForUpdate();
 
-    // --- 衝突判定用コライダーの初期化 ---
-    collider.SetCenter(position);
-    collider.SetSize(scale);
-
-    // --- 衝突システムに登録（弾と敵に反応する） ---
-    m_collisionId = Engine::CollisionSystem::GetInstance().Register(
-        &collider,
+    // --- コライダーをセットアップ（基底クラスの機能を使用） ---
+    SetupCollider(
+        m_scale,
         Engine::CollisionLayer::PLAYER,
-        Engine::CollisionLayer::PROJECTILE | Engine::CollisionLayer::ENEMY,
-        this
+        Engine::CollisionLayer::PROJECTILE | Engine::CollisionLayer::ENEMY
     );
     DebugLog("[Player::Initialize] Collision registered: id=%d\n", m_collisionId);
 
@@ -110,23 +103,32 @@ void Player::Initialize(Map* map, ID3D11ShaderResourceView* texture, int id, Vie
 }
 
 //==========================================================
-// 位置設定
+// 位置設定（GameObjectBaseのオーバーライド）
+// 見た目オブジェクトの位置も同期する
 //==========================================================
 void Player::SetPosition(const XMFLOAT3& pos) {
-    position = pos;
-    UpdateCollider();
+    // 基底クラスのSetPositionを呼び出す（コライダーも同期される）
+    GameObjectBase::SetPosition(pos);
+    // 見た目オブジェクトの更新
+    UpdateVisualObject();
 }
 
 //==========================================================
-// コライダー更新
+// 回転設定（GameObjectBaseのオーバーライド）
 //==========================================================
-void Player::UpdateCollider() {
-    collider.SetCenter(position);
-    collider.SetSize(scale);
+void Player::SetRotation(const XMFLOAT3& rot) {
+    GameObjectBase::SetRotation(rot);
+    visualObject.rotation = m_rotation;
+    visualObject.markBufferForUpdate();
+}
 
-    visualObject.position = position;
-    visualObject.scale = scale;
-    visualObject.setBoxCollider(scale);
+//==========================================================
+// 見た目オブジェクトの更新
+//==========================================================
+void Player::UpdateVisualObject() {
+    visualObject.position = m_position;
+    visualObject.scale = m_scale;
+    visualObject.setBoxCollider(m_scale);
     visualObject.markBufferForUpdate();
 }
 
@@ -154,17 +156,17 @@ void Player::Update(float deltaTime) {
     }
 
     // --- 速度に基づいて位置を更新 ---
-    XMFLOAT3 newPosition = position;
+    XMFLOAT3 newPosition = m_position;
     newPosition.x += velocity.x * deltaTime;
     newPosition.y += velocity.y * deltaTime;
     newPosition.z += velocity.z * deltaTime;
 
     // --- コライダーを新しい位置に更新 ---
-    collider.SetCenter(newPosition);
+    m_collider.SetCenter(newPosition);
 
     // --- マップとの衝突判定 ---
     bool groundedThisFrame = false;
-    auto penetrations = Engine::MapCollision::GetInstance().CheckCollisionAll(&collider, 2.0f);
+    auto penetrations = Engine::MapCollision::GetInstance().CheckCollisionAll(&m_collider, 2.0f);
 
     // Y軸の補正を先に処理（地面判定を優先）
     float totalPenY = 0.0f;
@@ -215,9 +217,9 @@ void Player::Update(float deltaTime) {
         // 少し下を調べて地面があればスナップ
         XMFLOAT3 snapTestPos = newPosition;
         snapTestPos.y -= 0.15f;  // スナップ距離
-        collider.SetCenter(snapTestPos);
+        m_collider.SetCenter(snapTestPos);
 
-        auto snapPenetrations = Engine::MapCollision::GetInstance().CheckCollisionAll(&collider, 1.0f);
+        auto snapPenetrations = Engine::MapCollision::GetInstance().CheckCollisionAll(&m_collider, 1.0f);
         for (const auto& pen : snapPenetrations) {
             if (pen.y > 0.0f) {
                 // 地面が見つかった
@@ -231,8 +233,8 @@ void Player::Update(float deltaTime) {
     }
 
     // --- 位置確定 ---
-    position = newPosition;
-    collider.SetCenter(position);
+    m_position = newPosition;
+    m_collider.SetCenter(m_position);
 
     // --- 摩擦で水平速度を減衰 ---
     if (isGrounded) {
@@ -249,8 +251,8 @@ void Player::Update(float deltaTime) {
     if (fabsf(velocity.z) < 0.01f) velocity.z = 0.0f;
 
     // --- 見た目を位置・回転に同期 ---
-    visualObject.position = position;
-    visualObject.rotation = rotation;
+    visualObject.position = m_position;
+    visualObject.rotation = m_rotation;
     visualObject.markBufferForUpdate();
 
     // --- 銃の更新 ---
@@ -284,9 +286,9 @@ void Player::Jump() {
 //==========================================================
 void Player::ApplyPenetration(const XMFLOAT3& penetration) {
     // めり込み分だけ位置を押し戻す
-    position.x += penetration.x;
-    position.y += penetration.y;
-    position.z += penetration.z;
+    m_position.x += penetration.x;
+    m_position.y += penetration.y;
+    m_position.z += penetration.z;
 
     // 押し戻した軸の速度をゼロにする
     if (penetration.x != 0.0f) velocity.x = 0.0f;
@@ -299,7 +301,8 @@ void Player::ApplyPenetration(const XMFLOAT3& penetration) {
     }
     if (penetration.z != 0.0f) velocity.z = 0.0f;
 
-    UpdateCollider();
+    SyncCollider();
+    UpdateVisualObject();
 }
 
 //==========================================================
@@ -338,23 +341,24 @@ GameObject* Player::GetGameObject() {
 // 強制位置設定（ネットワーク用）
 //==========================================================
 void Player::ForceSetPosition(const XMFLOAT3& pos) {
-    position = pos;
+    m_position = pos;
     // マップがあれば地面にめり込まないよう補正
     if (mapRef) {
-        float groundY = mapRef->GetGroundHeight(position.x, position.z);
-        if (position.y < groundY + scale.y * 0.5f) {
-            position.y = groundY + scale.y * 0.5f;
+        float groundY = mapRef->GetGroundHeight(m_position.x, m_position.z);
+        if (m_position.y < groundY + m_scale.y * 0.5f) {
+            m_position.y = groundY + m_scale.y * 0.5f;
         }
     }
-    UpdateCollider();
+    SyncCollider();
+    UpdateVisualObject();
 }
 
 //==========================================================
 // 強制回転設定（ネットワーク用）
 //==========================================================
 void Player::ForceSetRotation(const XMFLOAT3& rot) {
-    rotation = rot;
-    visualObject.rotation = rotation;
+    m_rotation = rot;
+    visualObject.rotation = m_rotation;
     visualObject.markBufferForUpdate();
 }
 
@@ -384,12 +388,13 @@ void Player::TakeDamage(int dmg) {
 // リスポーン処理
 //==========================================================
 void Player::Respawn(const XMFLOAT3& spawnPoint) {
-    position = spawnPoint;
+    m_position = spawnPoint;
     hp = MAX_HP;       // 最大HPで復活
     isAlive = true;
     velocity = { 0.0f, 0.0f, 0.0f };
     isGrounded = false;
-    UpdateCollider();
+    SyncCollider();
+    UpdateVisualObject();
 }
 
 //==========================================================

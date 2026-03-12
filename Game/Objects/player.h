@@ -10,6 +10,7 @@
 #pragma once
 #include "main.h"
 #include "Game/Objects/game_object.h"
+#include "Game/Objects/game_object_base.h"
 #include "Game/Objects/gun.h"
 #include "Engine/Collision/box_collider.h"
 #include <DirectXMath.h>
@@ -31,24 +32,20 @@ enum class ViewMode {
 
 //==========================================================
 // プレイヤークラス
+// GameObjectBaseを継承してコライダー管理を共通化
 //==========================================================
-class Player {
+class Player : public GameObjectBase {
 private:
-    // --- 位置・回転・スケール ---
-    XMFLOAT3 position;
+    // --- 速度（位置・回転・スケールはGameObjectBaseから継承） ---
     XMFLOAT3 velocity;
-    XMFLOAT3 rotation;
-    XMFLOAT3 scale;
 
     // --- 接地安定化 ---
     bool m_wasGrounded = false;      // 前フレームの接地状態
     float m_groundedTimer = 0.0f;    // 接地猶予タイマー（コヨーテタイム）
     float m_coyoteTime = 0.1f;       // 接地猶予時間（秒
 
-    // --- 衝突判定 ---
-    Engine::BoxCollider collider;
+    // --- 衝突判定（コライダーはGameObjectBaseから継承） ---
     GameObject visualObject;
-    uint32_t m_collisionId = 0;
 
     // --- 銃オブジェクト ---
     std::unique_ptr<Gun> m_gun;
@@ -82,35 +79,36 @@ private:
     float cameraYaw;
     float cameraPitch;
 
-    // --- コライダー更新 ---
-    void UpdateCollider();
+    // --- 内部ヘルパー関数 ---
+    void UpdateVisualObject();
 
 public:
     Player();
     ~Player();
 
-    // --- 初期化・更新・描画 ---
+    // --- 初期化・更新・描画（Update/DrawはGameObjectBaseからオーバーライド） ---
     void Initialize(Map* map, ID3D11ShaderResourceView* texture, int id = 0, ViewMode mode = ViewMode::THIRD_PERSON);
-    void Update(float deltaTime);
-    void Draw();
+    void Update(float deltaTime) override;
+    void Draw() override;
 
     // --- 移動・ジャンプ ---
     void Move(const XMFLOAT3& direction, float deltaTime);
     void Jump();
 
     // --- ゲッター ---
-    XMFLOAT3 GetPosition() const { return position; }
-    XMFLOAT3 GetRotation() const { return rotation; }
-    const Engine::BoxCollider& GetCollider() const { return collider; }
-    Engine::BoxCollider* GetColliderPtr() { return &collider; }
+    // 既存インターフェースとの互換性を維持
+    XMFLOAT3 GetPosition() const { return m_position; }
+    XMFLOAT3 GetRotation() const { return m_rotation; }
+    const Engine::BoxCollider& GetCollider() const { return m_collider; }
+    Engine::BoxCollider* GetColliderPtr() { return &m_collider; }
     bool IsGrounded() const { return isGrounded; }
     int GetPlayerId() const { return playerId; }
     ViewMode GetViewMode() const { return viewMode; }
     uint32_t GetCollisionId() const { return m_collisionId; }
 
-    // --- セッター ---
-    void SetPosition(const XMFLOAT3& pos);
-    void SetRotation(const XMFLOAT3& rot) { rotation = rot; }
+    // --- セッター（位置・回転はGameObjectBaseのメソッドをオーバーライド） ---
+    void SetPosition(const XMFLOAT3& pos) override;
+    void SetRotation(const XMFLOAT3& rot) override;
     void SetViewMode(ViewMode mode) { viewMode = mode; }
     void SetGrounded(bool grounded) { isGrounded = grounded; }
 

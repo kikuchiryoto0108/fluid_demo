@@ -50,6 +50,7 @@
     <ClInclude Include="Game\game.h" />
     <ClInclude Include="Game\game_manager.h" />
     <ClInclude Include="Game\Objects\game_object.h" />
+    <ClInclude Include="Game\Objects\game_object_base.h" />
     <ClInclude Include="Game\Objects\player.h" />
     <ClInclude Include="Game\Objects\bullet.h" />
     <ClInclude Include="Game\Objects\camera.h" />
@@ -93,6 +94,7 @@
     <ClCompile Include="Game\game.cpp" />
     <ClCompile Include="Game\game_manager.cpp" />
     <ClCompile Include="Game\Objects\game_object.cpp" />
+    <ClCompile Include="Game\Objects\game_object_base.cpp" />
     <ClCompile Include="Game\Objects\player.cpp" />
     <ClCompile Include="Game\Objects\bullet.cpp" />
     <ClCompile Include="Game\Objects\camera.cpp" />

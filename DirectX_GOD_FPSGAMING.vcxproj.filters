@@ -171,6 +171,9 @@
     <ClInclude Include="Game\Objects\game_object.h">
       <Filter>ヘッダー ファイル\Game\Objects</Filter>
     </ClInclude>
+    <ClInclude Include="Game\Objects\game_object_base.h">
+      <Filter>ヘッダー ファイル\Game\Objects</Filter>
+    </ClInclude>
     <ClInclude Include="Game\Objects\player.h">
       <Filter>ヘッダー ファイル\Game\Objects</Filter>
     </ClInclude>
@@ -282,6 +285,9 @@
       <Filter>ソース ファイル\Game</Filter>
     </ClCompile>
     <ClCompile Include="Game\Objects\game_object.cpp">
+      <Filter>ソース ファイル\Game\Objects</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\Objects\game_object_base.cpp">
       <Filter>ソース ファイル\Game\Objects</Filter>
     </ClCompile>
     <ClCompile Include="Game\Objects\player.cpp">

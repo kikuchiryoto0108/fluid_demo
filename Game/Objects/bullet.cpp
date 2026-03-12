@@ -20,38 +20,33 @@ namespace Game {
 // コンストラクタ
 //==========================================================
 Bullet::Bullet()
-    : position(0, 0, 0)
+    : GameObjectBase()  // 基底クラスのコンストラクタを呼び出す
     , velocity(0, 0, 0)
     , lifeTime(0)
-    , active(false)
-    , collider({ 0, 0, 0 }, { 0.2f, 0.2f, 0.2f })
-    , m_collisionId(0)
     , ownerPlayerId(0) {
+    // 初期状態は非アクティブ
+    m_active = false;
+    // 弾丸のデフォルトサイズを設定
+    m_scale = XMFLOAT3(0.2f, 0.2f, 0.2f);
 }
 
 //==========================================================
 // デストラクタ
+// 基底クラスのデストラクタでCollisionSystemから自動解除
 //==========================================================
 Bullet::~Bullet() {
-    if (m_collisionId != 0) {
-        Engine::CollisionSystem::GetInstance().Unregister(m_collisionId);
-        m_collisionId = 0;
-    }
+    // 基底クラスのデストラクタで自動的にUnregisterCollider()が呼ばれる
 }
 
 //==========================================================
 // ムーブコンストラクタ
 //==========================================================
 Bullet::Bullet(Bullet&& other) noexcept
-    : position(other.position)
+    : GameObjectBase(std::move(other))  // 基底クラスのムーブコンストラクタを呼び出す
     , velocity(other.velocity)
     , lifeTime(other.lifeTime)
-    , active(other.active)
-    , collider(std::move(other.collider))
     , visual(std::move(other.visual))
-    , m_collisionId(other.m_collisionId)
     , ownerPlayerId(other.ownerPlayerId) {
-    other.m_collisionId = 0;
 }
 
 //==========================================================
@@ -59,20 +54,13 @@ Bullet::Bullet(Bullet&& other) noexcept
 //==========================================================
 Bullet& Bullet::operator=(Bullet&& other) noexcept {
     if (this != &other) {
-        if (m_collisionId != 0) {
-            Engine::CollisionSystem::GetInstance().Unregister(m_collisionId);
-        }
+        // 基底クラスのムーブ代入演算子を呼び出す
+        GameObjectBase::operator=(std::move(other));
 
-        position = other.position;
         velocity = other.velocity;
         lifeTime = other.lifeTime;
-        active = other.active;
-        collider = std::move(other.collider);
         visual = std::move(other.visual);
-        m_collisionId = other.m_collisionId;
         ownerPlayerId = other.ownerPlayerId;
-
-        other.m_collisionId = 0;
     }
     return *this;
 }
@@ -81,28 +69,24 @@ Bullet& Bullet::operator=(Bullet&& other) noexcept {
 // 初期化処理
 //==========================================================
 void Bullet::Initialize(ID3D11ShaderResourceView* texture, const XMFLOAT3& pos, const XMFLOAT3& dir, int ownerId) {
-    position = pos;
+    m_position = pos;
     velocity = { dir.x * 15.0f, dir.y * 15.0f, dir.z * 15.0f };
     lifeTime = 3.0f;
-    active = true;
+    m_active = true;
     ownerPlayerId = ownerId;   // 弾を撃ったプレイヤーのIDを記録
 
     // --- 見た目の初期化 ---
-    visual.position = position;
+    visual.position = m_position;
     visual.scale = XMFLOAT3(0.2f, 0.2f, 0.2f);
     visual.setMesh(Box, 36, texture);
     visual.setBoxCollider(visual.scale);
     visual.markBufferForUpdate();
 
-    // --- 衝突判定の初期化 ---
-    collider.SetCenter(position);
-    collider.SetSize({ 0.2f, 0.2f, 0.2f });
-
-    m_collisionId = Engine::CollisionSystem::GetInstance().Register(
-        &collider,
+    // --- コライダーをセットアップ（基底クラスの機能を使用） ---
+    SetupCollider(
+        { 0.2f, 0.2f, 0.2f },
         Engine::CollisionLayer::PROJECTILE,
-        Engine::CollisionLayer::PLAYER | Engine::CollisionLayer::ENEMY,
-        this
+        Engine::CollisionLayer::PLAYER | Engine::CollisionLayer::ENEMY
     );
 }
 
@@ -110,20 +94,20 @@ void Bullet::Initialize(ID3D11ShaderResourceView* texture, const XMFLOAT3& pos, 
 // 更新処理
 //==========================================================
 void Bullet::Update(float deltaTime) {
-    if (!active) return;
+    if (!m_active) return;
 
     // --- 弾の移動 ---
-    position.x += velocity.x * deltaTime;
-    position.y += velocity.y * deltaTime;
-    position.z += velocity.z * deltaTime;
+    m_position.x += velocity.x * deltaTime;
+    m_position.y += velocity.y * deltaTime;
+    m_position.z += velocity.z * deltaTime;
 
-    collider.SetCenter(position);
-    visual.position = position;
+    m_collider.SetCenter(m_position);
+    visual.position = m_position;
     visual.markBufferForUpdate();
 
     // --- マップとの衝突で弾を消す ---
     XMFLOAT3 pen;
-    if (Engine::MapCollision::GetInstance().CheckCollision(&collider, pen)) {
+    if (Engine::MapCollision::GetInstance().CheckCollision(&m_collider, pen)) {
         Deactivate();
         return;
     }
@@ -139,21 +123,18 @@ void Bullet::Update(float deltaTime) {
 // 描画処理
 //==========================================================
 void Bullet::Draw() {
-    if (active) visual.draw();
+    if (m_active) visual.draw();
 }
 
 //==========================================================
 // 非アクティブ化
 //==========================================================
 void Bullet::Deactivate() {
-    if (!active) return;
-    active = false;
+    if (!m_active) return;
+    m_active = false;
 
-    // --- 衝突システムから登録解除 ---
-    if (m_collisionId != 0) {
-        Engine::CollisionSystem::GetInstance().Unregister(m_collisionId);
-        m_collisionId = 0;
-    }
+    // --- 衝突システムから登録解除（基底クラスの機能を使用） ---
+    UnregisterCollider();
 }
 
 } // namespace Game
