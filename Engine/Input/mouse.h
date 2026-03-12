@@ -1,113 +1,217 @@
 /*********************************************************************
  * \file   mouse.h
- * \brief  マウス入力モジュール - DirectXTK改変版
- * 
+ * \brief  マウス入力モジュール
+ *
  * \author Ryoto Kikuchi
- * \date   2025/06/27
- * 
- * DirectXTKより、なんちゃってC言語用にシェイプアップ改変
- * Licensed under the MIT License.
- * http://go.microsoft.com/fwlink/?LinkId=248929
- * http://go.microsoft.com/fwlink/?LinkID=615561
+ * \date   2026/3/10
+ *
+ * 【概要】
+ * Windowsメッセージ + Raw Input ベースのマウス入力管理
+ * DirectXTKの設計を参考にモダンC++でリファクタリング
+ *
+ * 【特徴】
+ * - 絶対座標モード: 通常のマウス操作（UI、ポイント＆クリック）
+ * - 相対座標モード: FPS向け（カーソル非表示、移動量取得）
+ * - Raw Inputによる高精度な相対座標取得
+ * - Press/Trigger/Release の3種判定
+ *
+ * 【使用方法】
+ * 1. Mouse::Instance().Initialize(hwnd) で初期化
+ * 2. WndProcから Mouse::Instance().ProcessMessage() を呼ぶ
+ * 3. ゲームループで Mouse::Instance().Update() を呼ぶ
+ * 4. GetX/GetY/IsPressed等で状態を取得
+ *
  *********************************************************************/
-#ifndef HAL_YOUHEI_MOUSE_H
-#define HAL_YOUHEI_MOUSE_H
 #pragma once
 
-
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
 #include <windows.h>
-#include <memory>
+#include <cstdint>
 
+//==============================================================================
+// マウスボタン定義
+//==============================================================================
+enum class MouseButton : uint8_t {
+    Left,       ///< 左ボタン
+    Right,      ///< 右ボタン
+    Middle,     ///< 中ボタン（ホイールクリック）
+    X1,         ///< 拡張ボタン1（サイドボタン）
+    X2,         ///< 拡張ボタン2（サイドボタン）
+    Count       ///< ボタン数
+};
 
-//==========================================================
-// マウスポジションモード列挙型
-//==========================================================
-typedef enum Mouse_PositionMode_tag
-{
-    MOUSE_POSITION_MODE_ABSOLUTE, // 絶対座標モード
-    MOUSE_POSITION_MODE_RELATIVE, // 相対座標モード（FPS向け）
-} Mouse_PositionMode;
+//==============================================================================
+// マウスモード
+//------------------------------------------------------------------------------
+// Absolute: 通常モード。座標はウィンドウクライアント領域内の位置
+// Relative: FPS向けモード。座標は前フレームからの移動量
+//==============================================================================
+enum class MouseMode {
+    Absolute,   ///< 絶対座標モード（通常）
+    Relative    ///< 相対座標モード（FPS向け）
+};
 
+//==============================================================================
+// マウスクラス
+//------------------------------------------------------------------------------
+// 【設計】
+// - シングルトンパターンでグローバルアクセス
+// - 座標モードの切り替えに対応
+// - Raw Inputで高精度な相対座標を取得
+//==============================================================================
+class Mouse {
+public:
+    //==========================================================================
+    // 状態構造体（従来API互換用）
+    //==========================================================================
+    struct State {
+        int x = 0;                              ///< X座標
+        int y = 0;                              ///< Y座標
+        int scrollWheel = 0;                    ///< ホイール累積値
+        bool buttons[static_cast<int>(MouseButton::Count)] = {};  ///< ボタン状態
+        MouseMode mode = MouseMode::Absolute;   ///< 座標モード
+    };
 
-//==========================================================
-// マウス状態構造体
-//==========================================================
-typedef struct MouseState_tag
-{
-    bool leftButton;
-    bool middleButton;
-    bool rightButton;
-    bool xButton1;
-    bool xButton2;
-    int x;
-    int y;
-    int scrollWheelValue;
-    Mouse_PositionMode positionMode;
-} Mouse_State;
+public:
+    //==========================================================================
+    // シングルトンアクセス
+    //==========================================================================
+    static Mouse& Instance();
 
+    //==========================================================================
+    // ライフサイクル
+    //==========================================================================
 
-//==========================================================
-// マウスモジュール関数
-//==========================================================
+    /// 初期化（ウィンドウ生成後に呼ぶ）
+    /// @param window ウィンドウハンドル（必須）
+    void Initialize(HWND window);
 
-// マウスモジュールの初期化
-void Mouse_Initialize(HWND window);
+    /// 終了処理（アプリケーション終了時に呼ぶ）
+    void Finalize();
 
-// マウスモジュールの終了処理
-void Mouse_Finalize(void);
+    /// 更新（毎フレーム呼ぶ）
+    void Update();
 
-// マウスの状態を取得する
-void Mouse_GetState(Mouse_State* pState);
+    //==========================================================================
+    // Windowsメッセージ処理
+    //==========================================================================
 
-// 累積したマウススクロールホイール値をリセットする
-void Mouse_ResetScrollWheelValue(void);
+    /// WndProcから呼び出す
+    /// @param message マウス関連メッセージ
+    /// @param wParam メッセージパラメータ
+    /// @param lParam メッセージパラメータ
+    void ProcessMessage(UINT message, WPARAM wParam, LPARAM lParam);
 
-// マウスのポジションモードを設定する（デフォルトは絶対座標モード）
-void Mouse_SetMode(Mouse_PositionMode mode);
+    //==========================================================================
+    // ボタン状態取得
+    //==========================================================================
 
-// マウスの接続を検出する
-bool Mouse_IsConnected(void);
+    /// ボタンが押されているか
+    bool IsPressed(MouseButton button) const;
 
-// マウスカーソルが表示されているか確認する
-bool Mouse_IsVisible(void);
+    /// ボタンが押された瞬間か
+    bool IsTrigger(MouseButton button) const;
 
-// マウスカーソル表示を設定する
-void Mouse_SetVisible(bool visible);
+    /// ボタンが離された瞬間か
+    bool IsRelease(MouseButton button) const;
 
-// マウス制御のためのウィンドウメッセージプロシージャフック関数
-void Mouse_ProcessMessage(UINT message, WPARAM wParam, LPARAM lParam);
+    //==========================================================================
+    // 座標取得
+    //==========================================================================
 
+    /// X座標を取得
+    /// @return Absoluteモード: クライアント座標, Relativeモード: 移動量
+    int GetX() const { return m_currentState.x; }
 
-//==========================================================
-// 使用方法
-//==========================================================
-// 対象のウィンドウが生成されたらそのウィンドウハンドルを引数に初期化関数を呼ぶ
-//
-// Mouse_Initialize(hwnd);
-//
-// ウィンドウメッセージプロシージャからマウス制御用フック関数を呼び出す
-//
-// LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
-// {
-//     switch (message)
-//     {
-//     case WM_ACTIVATEAPP:
-//     case WM_INPUT:
-//     case WM_MOUSEMOVE:
-//     case WM_LBUTTONDOWN:
-//     case WM_LBUTTONUP:
-//     case WM_RBUTTONDOWN:
-//     case WM_RBUTTONUP:
-//     case WM_MBUTTONDOWN:
-//     case WM_MBUTTONUP:
-//     case WM_MOUSEWHEEL:
-//     case WM_XBUTTONDOWN:
-//     case WM_XBUTTONUP:
-//     case WM_MOUSEHOVER:
-//         Mouse_ProcessMessage(message, wParam, lParam);
-//         break;
-//     }
-// }
+    /// Y座標を取得
+    int GetY() const { return m_currentState.y; }
 
+    /// ホイール累積値を取得（WHEEL_DELTA単位、通常120）
+    int GetScrollWheel() const { return m_currentState.scrollWheel; }
 
-#endif // HAL_YOUHEI_MOUSE_H
+    /// ホイール値をリセット
+    void ResetScrollWheel();
+
+    /// 現在の状態を構造体で取得（従来API互換用）
+    State GetState() const;
+
+    //==========================================================================
+    // モード設定
+    //==========================================================================
+
+    /// 座標モードを設定
+    /// @param mode Absolute または Relative
+    void SetMode(MouseMode mode);
+
+    /// 現在の座標モードを取得
+    MouseMode GetMode() const { return m_currentState.mode; }
+
+    //==========================================================================
+    // カーソル制御
+    //==========================================================================
+
+    /// カーソルの表示/非表示を設定
+    /// @param visible trueで表示、falseで非表示
+    /// @note Relativeモードでは常に非表示
+    void SetVisible(bool visible);
+
+    /// カーソルが表示されているか
+    bool IsVisible() const;
+
+    /// マウスが接続されているか
+    bool IsConnected() const;
+
+private:
+    //==========================================================================
+    // コンストラクタ（シングルトンのためprivate）
+    //==========================================================================
+    Mouse() = default;
+    ~Mouse() = default;
+    Mouse(const Mouse&) = delete;
+    Mouse& operator=(const Mouse&) = delete;
+
+    //==========================================================================
+    // 内部ヘルパー
+    //==========================================================================
+
+    /// カーソルをウィンドウ内にクリップ（Relativeモード用）
+    void ClipToWindow();
+
+    /// モード切替イベントを処理
+    void ProcessModeSwitch();
+
+private:
+    //==========================================================================
+    // ウィンドウハンドル
+    //==========================================================================
+    HWND m_window = nullptr;
+
+    //==========================================================================
+    // 状態データ
+    //==========================================================================
+    State m_currentState = {};   ///< 現在フレームの状態
+    State m_previousState = {};  ///< 前フレームの状態
+
+    //==========================================================================
+    // 相対座標モード用
+    //==========================================================================
+    int m_lastAbsX = 0;          ///< Absoluteモードに戻る時の座標
+    int m_lastAbsY = 0;
+    int m_relativeX = INT32_MAX; ///< リモートデスクトップ対応用
+    int m_relativeY = INT32_MAX;
+
+    //==========================================================================
+    // ウィンドウフォーカス状態
+    //==========================================================================
+    bool m_inFocus = true;
+
+    //==========================================================================
+    // イベントハンドル（モード切替の同期用）
+    //==========================================================================
+    HANDLE m_scrollWheelEvent = nullptr;   ///< ホイールリセット通知
+    HANDLE m_absoluteModeEvent = nullptr;  ///< Absoluteモード切替要求
+    HANDLE m_relativeModeEvent = nullptr;  ///< Relativeモード切替要求
+    HANDLE m_relativeReadEvent = nullptr;  ///< 相対座標読み取り完了通知
+};

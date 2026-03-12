@@ -45,7 +45,7 @@ namespace Engine {
 
         // --- 3. 入力マネージャー初期化 ---
         // キーボード、マウス、ゲームコントローラーを準備
-        InputManager::GetInstance().Initialize(hWnd);
+        InputManager::Instance().Initialize(hWnd);
 
         // --- 4. 衝突判定マネージャー初期化 ---
         // コライダー管理システムを準備
@@ -77,7 +77,7 @@ namespace Engine {
 
         // --- 各マネージャー終了 ---
         CollisionManager::GetInstance().Shutdown();
-        InputManager::GetInstance().Finalize();
+        InputManager::Instance().Finalize();
         Renderer::GetInstance().Finalize();
 
         m_initialized = false;
@@ -93,14 +93,14 @@ namespace Engine {
         m_lastTime = currentTime;
 
         // --- 入力状態更新 ---
-        InputManager::GetInstance().Update();
+        InputManager::Instance().Update();
     }
 
     //==========================================================
     // サブシステムアクセサ - 各シングルトンへの参照を返す
     //==========================================================
     Renderer& System::GetRenderer() { return Renderer::GetInstance(); }
-    InputManager& System::GetInput() { return InputManager::GetInstance(); }
+    InputManager& System::GetInput() { return InputManager::Instance(); }
     CollisionManager& System::GetCollision() { return CollisionManager::GetInstance(); }
 
     //==========================================================

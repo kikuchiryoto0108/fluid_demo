@@ -87,6 +87,7 @@ namespace Engine {
 
         // --- メンバ変数 ---
         std::unordered_map<uint32_t, ColliderData> m_colliders;  // 登録済みコライダー
+        std::vector<ColliderData*> m_activeBuffer;                  // 再利用バッファ
         uint32_t m_nextId = 1;                                    // 次のID
         CollisionCallback m_callback;                             // 衝突時コールバック
     };

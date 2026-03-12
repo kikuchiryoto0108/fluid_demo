@@ -12,33 +12,24 @@
 
 namespace Engine {
 
-    //==========================================================
-    // シングルトンインスタンス取得
-    //==========================================================
     CollisionSystem& CollisionSystem::GetInstance() {
         static CollisionSystem instance;
         return instance;
     }
 
-    //==========================================================
-    // Initialize - システム初期化
-    //==========================================================
     void CollisionSystem::Initialize() {
         m_colliders.clear();
+        m_colliders.reserve(64);  // 事前確保
+        m_activeBuffer.reserve(64);
         m_nextId = 1;
     }
 
-    //==========================================================
-    // Shutdown - システム終了
-    //==========================================================
     void CollisionSystem::Shutdown() {
         m_colliders.clear();
+        m_activeBuffer.clear();
         m_callback = nullptr;
     }
 
-    //==========================================================
-    // Register - コライダーの登録
-    //==========================================================
     uint32_t CollisionSystem::Register(Collider* collider, CollisionLayer layer, CollisionLayer mask, void* userData) {
         if (!collider) return 0;
 
@@ -55,16 +46,10 @@ namespace Engine {
         return id;
     }
 
-    //==========================================================
-    // Unregister - コライダーの登録解除
-    //==========================================================
     void CollisionSystem::Unregister(uint32_t id) {
         m_colliders.erase(id);
     }
 
-    //==========================================================
-    // SetEnabled - コライダーの有効/無効切り替え
-    //==========================================================
     void CollisionSystem::SetEnabled(uint32_t id, bool enabled) {
         auto it = m_colliders.find(id);
         if (it != m_colliders.end()) {
@@ -72,29 +57,29 @@ namespace Engine {
         }
     }
 
-    //==========================================================
-    // Update - 衝突検出の更新処理
-    //==========================================================
     void CollisionSystem::Update() {
         if (!m_callback) return;
 
-        // --- 有効なコライダーを収集 ---
-        std::vector<ColliderData*> active;
+        // バッファを再利用
+        m_activeBuffer.clear();
         for (auto& pair : m_colliders) {
             if (pair.second.enabled && pair.second.collider) {
-                active.push_back(&pair.second);
+                m_activeBuffer.push_back(&pair.second);
             }
         }
 
-        // --- 全ペアの衝突チェック（ブロードフェーズなし） ---
-        for (size_t i = 0; i < active.size(); ++i) {
-            for (size_t j = i + 1; j < active.size(); ++j) {
-                ColliderData* a = active[i];
-                ColliderData* b = active[j];
+        const size_t count = m_activeBuffer.size();
 
-                // レイヤーマスクチェック
-                if (!HasFlag(a->mask, b->layer)) continue;
-                if (!HasFlag(b->mask, a->layer)) continue;
+        // 少数のオブジェクトなら全ペアチェック
+        for (size_t i = 0; i < count; ++i) {
+            for (size_t j = i + 1; j < count; ++j) {
+                ColliderData* a = m_activeBuffer[i];
+                ColliderData* b = m_activeBuffer[j];
+
+                // レイヤーマスクチェック（早期終了）
+                if (!HasFlag(a->mask, b->layer) || !HasFlag(b->mask, a->layer)) {
+                    continue;
+                }
 
                 // 衝突判定
                 if (a->collider->Intersects(b->collider)) {
@@ -102,7 +87,6 @@ namespace Engine {
                     hit.dataA = a;
                     hit.dataB = b;
 
-                    // ボックス同士の場合はめり込み量を計算
                     if (a->collider->GetType() == ColliderType::BOX &&
                         b->collider->GetType() == ColliderType::BOX) {
                         static_cast<BoxCollider*>(a->collider)->ComputePenetration(

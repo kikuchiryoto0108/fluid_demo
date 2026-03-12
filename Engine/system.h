@@ -18,13 +18,14 @@
 
 #include <windows.h>
 
+class InputManager;
+
 namespace Engine {
 
 //==========================================================
 // 前方宣言
 //==========================================================
 class Renderer;
-class InputManager;
 class CollisionManager;
 
 //==========================================================

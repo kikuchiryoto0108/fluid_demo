@@ -1,181 +1,192 @@
-/*********************************************************************
- * \file   game_controller.h
- * \brief  ã‚²ãƒ¼ãƒ ãƒ‘ãƒƒãƒ‰å…¥åŠ›ãƒ¢ã‚¸ãƒ¥ãƒ¼ãƒ« - WinMM/HIDå¯¾å¿œã‚³ãƒ³ãƒˆãƒ­ãƒ¼ãƒ©ãƒ¼
- * 
- * \author Ryoto Kikuchi
- * \date   2025/06/27
- *********************************************************************/
+//==============================================================================
+//
+//  ƒQ[ƒ€ƒRƒ“ƒgƒ[ƒ‰[“ü—ÍŠÇ—iSDL3”Åj [game_controller.h]
+//  Author : Ryoto Kikuchi
+//  Date   : 2026/1/5
+//------------------------------------------------------------------------------
+//
+//==============================================================================
 #pragma once
-#include <windows.h>
-#include <hidsdi.h>
-#include <setupapi.h>
-#include <mmsystem.h>
+#include <SDL3/SDL.h>
 #include <cmath>
-#include <string>
 
-#pragma comment(lib, "hid.lib")
-#pragma comment(lib, "setupapi.lib")
-#pragma comment(lib, "winmm.lib")
-
-//==========================================================
-// ã‚²ãƒ¼ãƒ ãƒ‘ãƒƒãƒ‰çŠ¶æ…‹æ§‹é€ ä½“
-//==========================================================
+//==============================================================================
+// ƒQ[ƒ€ƒpƒbƒhó‘Ô\‘¢‘Ì
+//==============================================================================
 struct GamepadState {
-    // --- åŸºæœ¬å…¥åŠ›ï¼ˆWinMMï¼‰ ---
-    float leftStickX = 0.0f, leftStickY = 0.0f;
-    float rightStickX = 0.0f, rightStickY = 0.0f;
-    float leftTrigger = 0.0f, rightTrigger = 0.0f;
-    bool buttons[32] = {};
+    // ¶ƒXƒeƒBƒbƒNi-1.0 ~ 1.0j
+    float leftStickX = 0.0f;
+    float leftStickY = 0.0f;
+
+    // ‰EƒXƒeƒBƒbƒNi-1.0 ~ 1.0j
+    float rightStickX = 0.0f;
+    float rightStickY = 0.0f;
+
+    // ƒgƒŠƒK[i0.0 ~ 1.0j
+    float leftTrigger = 0.0f;
+    float rightTrigger = 0.0f;
+
+    // \šƒL[
+    bool dpadUp = false;
+    bool dpadDown = false;
+    bool dpadLeft = false;
+    bool dpadRight = false;
+
+    // ƒƒCƒ“ƒ{ƒ^ƒ“iˆÊ’uƒx[ƒX: South/East/West/Northj
+    // Xbox:   A(‰º/South) B(‰E/East) X(¶/West) Y(ã/North)
+    // PS:     Cross(‰º)   Circle(‰E) Square(¶) Triangle(ã)
+    // Switch: B(‰º)       A(‰E)      Y(¶)      X(ã)
+    bool buttonDown = false;   // South (A / Cross / B)
+    bool buttonRight = false;  // East  (B / Circle / A)
+    bool buttonLeft = false;   // West  (X / Square / Y)
+    bool buttonUp = false;     // North (Y / Triangle / X)
+
+    // ƒVƒ‡ƒ‹ƒ_[ƒ{ƒ^ƒ“
+    bool buttonL1 = false;
+    bool buttonR1 = false;
+
+    // ƒgƒŠƒK[ƒ{ƒ^ƒ“iƒfƒWƒ^ƒ‹”»’èj
+    bool buttonL2 = false;
+    bool buttonR2 = false;
+
+    // ƒXƒeƒBƒbƒN‰Ÿ‚µ‚İ
+    bool buttonL3 = false;
+    bool buttonR3 = false;
+
+    // ƒVƒXƒeƒ€ƒ{ƒ^ƒ“
+    bool buttonStart = false;
+    bool buttonSelect = false;
+
+    // Ú‘±ó‘Ô
     bool connected = false;
 
-    // --- æ‹¡å¼µæ©Ÿèƒ½ï¼ˆHIDï¼‰ ---
-    struct {
-        float gyroPitch = 0.0f, gyroYaw = 0.0f, gyroRoll = 0.0f;
-        bool available = false;
-    } gyro;
-
-    struct {
-        float x = 0.0f, y = 0.0f;
-        bool touched = false;
-        bool available = false;
-    } touchpad;
-
-    int extendedType = 0; // 0=None, 1=PS4, 2=PS5, 3=Switch
-
-    // --- ä¾¿åˆ©ãƒ¡ã‚½ãƒƒãƒ‰ ---
     bool IsAnyButtonPressed() const {
-        for (int i = 0; i < 32; i++) {
-            if (buttons[i]) return true;
-        }
-        return false;
+        return buttonDown || buttonRight || buttonLeft || buttonUp ||
+            buttonL1 || buttonR1 || buttonL2 || buttonR2 ||
+            buttonL3 || buttonR3 ||
+            buttonStart || buttonSelect ||
+            dpadUp || dpadDown || dpadLeft || dpadRight;
     }
 
-    float GetTotalGyroRotation() const {
-        if (!gyro.available) return 0.0f;
-        return std::sqrt(gyro.gyroPitch * gyro.gyroPitch +
-            gyro.gyroYaw * gyro.gyroYaw +
-            gyro.gyroRoll * gyro.gyroRoll);
+    static float ApplyDeadzone(float value, float deadzone = 0.15f) {
+        // ƒfƒbƒhƒ][ƒ““à‚È‚ç0‚ğ•Ô‚·
+        if (fabs(value) < deadzone) return 0.0f;
+        float sign = (value > 0) ? 1.0f : -1.0f;
+
+        // ƒfƒbƒhƒ][ƒ“‚ÌŠO‘¤‚ğ0.0 ~ 1.0‚ÉÄƒ}ƒbƒsƒ“ƒO
+        float adjustedValue = (fabs(value) - deadzone) / (1.0f - deadzone);
+        return sign * adjustedValue;
     }
 };
 
-//==========================================================
-// ã‚²ãƒ¼ãƒ ã‚³ãƒ³ãƒˆãƒ­ãƒ¼ãƒ©ãƒ¼ã‚¯ãƒ©ã‚¹
-//==========================================================
+//==============================================================================
+// ƒQ[ƒ€ƒRƒ“ƒgƒ[ƒ‰[ƒNƒ‰ƒXiSDL3”Åj
+//==============================================================================
 class GameController {
-private:
-    static HANDLE s_hidHandle;
-    static int s_extendedType;
-    static bool s_hidInitialized;
-
-    // --- HIDæ‹¡å¼µæ©Ÿèƒ½ç”¨ ---
-    static bool TryOpenPS5();
-    static bool TryOpenPS4();
-    static bool TryOpenSwitch();
-    static bool ReadPS5Extended(GamepadState& state);
-    static bool ReadPS4Extended(GamepadState& state);
-    static bool ReadSwitchExtended(GamepadState& state);
-
 public:
-    //==========================================================
-    // GetGamepadValue - WinMMã‹ã‚‰ã‚²ãƒ¼ãƒ ãƒ‘ãƒƒãƒ‰ã®ç”Ÿã®å€¤ã‚’å–å¾—
-    //==========================================================
-    static int GetGamepadValue(int id, int func);
+    // ‰Šú‰»EI—¹
+    static bool Initialize();
+    static void Finalize();
+    static void Update();
 
-    //==========================================================
-    // Initialize - HIDæ‹¡å¼µæ©Ÿèƒ½ã®åˆæœŸåŒ–ï¼ˆå¤±æ•—ã—ã¦ã‚‚OKï¼‰
-    //==========================================================
-    static bool Initialize() {
-        if (TryOpenPS5()) {
-            s_extendedType = 2;
-            s_hidInitialized = true;
-        }
-        else if (TryOpenPS4()) {
-            s_extendedType = 1;
-            s_hidInitialized = true;
-        }
-        else if (TryOpenSwitch()) {
-            s_extendedType = 3;
-            s_hidInitialized = true;
-        }
-        else {
-            s_extendedType = 0;
-            s_hidInitialized = false;
-        }
+    // ƒoƒCƒuƒŒ[ƒVƒ‡ƒ“
+    static void StartVibration(float intensity, float duration);
+    static void StopVibration();
+    static bool IsVibrating();
 
-        return true; // WinMMã¯å¸¸ã«åˆ©ç”¨å¯èƒ½ã¨ã—ã¦æ‰±ã†
-    }
+    //==========================================================================
+    // Press”»’èi‰Ÿ‚µ‚Ä‚¢‚éŠÔ‚¸‚Á‚Ætruej
+    //==========================================================================
+    static bool IsPressed_ButtonDown() { return s_currentState.buttonDown; }
+    static bool IsPressed_ButtonRight() { return s_currentState.buttonRight; }
+    static bool IsPressed_ButtonLeft() { return s_currentState.buttonLeft; }
+    static bool IsPressed_ButtonUp() { return s_currentState.buttonUp; }
+    static bool IsPressed_L1() { return s_currentState.buttonL1; }
+    static bool IsPressed_R1() { return s_currentState.buttonR1; }
+    static bool IsPressed_L2() { return s_currentState.buttonL2; }
+    static bool IsPressed_R2() { return s_currentState.buttonR2; }
+    static bool IsPressed_L3() { return s_currentState.buttonL3; }
+    static bool IsPressed_R3() { return s_currentState.buttonR3; }
+    static bool IsPressed_Start() { return s_currentState.buttonStart; }
+    static bool IsPressed_Select() { return s_currentState.buttonSelect; }
+    static bool IsPressed_DpadUp() { return s_currentState.dpadUp; }
+    static bool IsPressed_DpadDown() { return s_currentState.dpadDown; }
+    static bool IsPressed_DpadLeft() { return s_currentState.dpadLeft; }
+    static bool IsPressed_DpadRight() { return s_currentState.dpadRight; }
 
-    //==========================================================
-    // GetState - ã‚²ãƒ¼ãƒ ãƒ‘ãƒƒãƒ‰çŠ¶æ…‹ã®å–å¾—
-    //==========================================================
-    static bool GetState(GamepadState& state) {
-        // --- åŸºæœ¬å…¥åŠ›ã‚’WinMMã§å–å¾— ---
-        bool winmmSuccess = GetWinMMState(state);
+    //==========================================================================
+    // Trigger”»’èi‰Ÿ‚µ‚½uŠÔ‚¾‚¯truej
+    //==========================================================================
+    static bool IsTrigger_ButtonDown() { return s_currentState.buttonDown && !s_prevState.buttonDown; }
+    static bool IsTrigger_ButtonRight() { return s_currentState.buttonRight && !s_prevState.buttonRight; }
+    static bool IsTrigger_ButtonLeft() { return s_currentState.buttonLeft && !s_prevState.buttonLeft; }
+    static bool IsTrigger_ButtonUp() { return s_currentState.buttonUp && !s_prevState.buttonUp; }
+    static bool IsTrigger_L1() { return s_currentState.buttonL1 && !s_prevState.buttonL1; }
+    static bool IsTrigger_R1() { return s_currentState.buttonR1 && !s_prevState.buttonR1; }
+    static bool IsTrigger_L2() { return s_currentState.buttonL2 && !s_prevState.buttonL2; }
+    static bool IsTrigger_R2() { return s_currentState.buttonR2 && !s_prevState.buttonR2; }
+    static bool IsTrigger_L3() { return s_currentState.buttonL3 && !s_prevState.buttonL3; }
+    static bool IsTrigger_R3() { return s_currentState.buttonR3 && !s_prevState.buttonR3; }
+    static bool IsTrigger_Start() { return s_currentState.buttonStart && !s_prevState.buttonStart; }
+    static bool IsTrigger_Select() { return s_currentState.buttonSelect && !s_prevState.buttonSelect; }
+    static bool IsTrigger_DpadUp() { return s_currentState.dpadUp && !s_prevState.dpadUp; }
+    static bool IsTrigger_DpadDown() { return s_currentState.dpadDown && !s_prevState.dpadDown; }
+    static bool IsTrigger_DpadLeft() { return s_currentState.dpadLeft && !s_prevState.dpadLeft; }
+    static bool IsTrigger_DpadRight() { return s_currentState.dpadRight && !s_prevState.dpadRight; }
 
-        // --- æ‹¡å¼µæ©Ÿèƒ½ã‚’HIDã§å–å¾—ï¼ˆå¤±æ•—ã—ã¦ã‚‚OKï¼‰ ---
-        if (s_hidInitialized && winmmSuccess) {
-            switch (s_extendedType) {
-            case 2: ReadPS5Extended(state); break;
-            case 1: ReadPS4Extended(state); break;
-            case 3: ReadSwitchExtended(state); break;
-            }
-        }
+    //==========================================================================
+    // Release”»’èi—£‚µ‚½uŠÔ‚¾‚¯truej
+    //==========================================================================
+    static bool IsRelease_ButtonDown() { return !s_currentState.buttonDown && s_prevState.buttonDown; }
+    static bool IsRelease_ButtonRight() { return !s_currentState.buttonRight && s_prevState.buttonRight; }
+    static bool IsRelease_ButtonLeft() { return !s_currentState.buttonLeft && s_prevState.buttonLeft; }
+    static bool IsRelease_ButtonUp() { return !s_currentState.buttonUp && s_prevState.buttonUp; }
+    static bool IsRelease_L1() { return !s_currentState.buttonL1 && s_prevState.buttonL1; }
+    static bool IsRelease_R1() { return !s_currentState.buttonR1 && s_prevState.buttonR1; }
+    static bool IsRelease_L2() { return !s_currentState.buttonL2 && s_prevState.buttonL2; }
+    static bool IsRelease_R2() { return !s_currentState.buttonR2 && s_prevState.buttonR2; }
+    static bool IsRelease_L3() { return !s_currentState.buttonL3 && s_prevState.buttonL3; }
+    static bool IsRelease_R3() { return !s_currentState.buttonR3 && s_prevState.buttonR3; }
+    static bool IsRelease_Start() { return !s_currentState.buttonStart && s_prevState.buttonStart; }
+    static bool IsRelease_Select() { return !s_currentState.buttonSelect && s_prevState.buttonSelect; }
+    static bool IsRelease_DpadUp() { return !s_currentState.dpadUp && s_prevState.dpadUp; }
+    static bool IsRelease_DpadDown() { return !s_currentState.dpadDown && s_prevState.dpadDown; }
+    static bool IsRelease_DpadLeft() { return !s_currentState.dpadLeft && s_prevState.dpadLeft; }
+    static bool IsRelease_DpadRight() { return !s_currentState.dpadRight && s_prevState.dpadRight; }
 
-        return winmmSuccess;
-    }
+    //==========================================================================
+    // ƒXƒeƒBƒbƒNEƒgƒŠƒK[’læ“¾
+    //==========================================================================
+    static float GetLeftStickX() { return s_currentState.leftStickX; }
+    static float GetLeftStickY() { return s_currentState.leftStickY; }
+    static float GetRightStickX() { return s_currentState.rightStickX; }
+    static float GetRightStickY() { return s_currentState.rightStickY; }
+    static float GetLeftTrigger() { return s_currentState.leftTrigger; }
+    static float GetRightTrigger() { return s_currentState.rightTrigger; }
 
-    //==========================================================
-    // Shutdown - ãƒªã‚½ãƒ¼ã‚¹ã®è§£æ”¾
-    //==========================================================
-    static void Shutdown() {
-        if (s_hidHandle != INVALID_HANDLE_VALUE) {
-            CloseHandle(s_hidHandle);
-            s_hidHandle = INVALID_HANDLE_VALUE;
-        }
-        s_hidInitialized = false;
-        s_extendedType = 0;
-    }
+    // Ú‘±ó‘Ô
+    static bool IsConnected() { return s_currentState.connected; }
 
-    //==========================================================
-    // IsConnected - ã‚³ãƒ³ãƒˆãƒ­ãƒ¼ãƒ©ãƒ¼æ¥ç¶šç¢ºèª
-    //==========================================================
-    static bool IsConnected() {
-        JOYINFOEX ji = {};
-        ji.dwSize = sizeof(JOYINFOEX);
-        ji.dwFlags = JOY_RETURNBUTTONS;
-        return joyGetPosEx(0, &ji) == JOYERR_NOERROR;
-    }
+    // ƒRƒ“ƒgƒ[ƒ‰[–¼æ“¾iƒfƒoƒbƒO—pj
+    static const char* GetControllerName();
 
-    //==========================================================
-    // GetExtendedTypeName - æ‹¡å¼µã‚¿ã‚¤ãƒ—åã®å–å¾—
-    //==========================================================
-    static const char* GetExtendedTypeName() {
-        switch (s_extendedType) {
-        case 1: return "PS4 Extended";
-        case 2: return "PS5 Extended";
-        case 3: return "Switch Extended";
-        default: return "Basic Only";
-        }
+    // Œ»İ‚Ìó‘Ô‚ğæ“¾
+    static bool GetState(GamepadState& outState) {
+        outState = s_currentState;
+        return s_currentState.connected;
     }
 
 private:
-    static bool GetWinMMState(GamepadState& state);
+    static bool UpdateState();
+    static void TryOpenGamepad();
+    static float NormalizeAxisValue(Sint16 value);
+
+private:
+    static SDL_Gamepad* s_gamepad;
+    static SDL_JoystickID s_gamepadID;
+    static GamepadState s_currentState;
+    static GamepadState s_prevState;
+    static bool s_isVibrating;
+    static Uint64 s_vibrationEndTime;
+    static bool s_sdlInitialized;
 };
-
-
-//==========================================================
-// ãƒœã‚¿ãƒ³ã‚¤ãƒ³ãƒ‡ãƒƒã‚¯ã‚¹å¯¾å¿œè¡¨
-//==========================================================
-// [0]  = A/Cross/B (ã‚¸ãƒ£ãƒ³ãƒ—)
-// [1]  = B/Circle/A
-// [2]  = X/Square/Y  
-// [3]  = Y/Triangle/X
-// [4]  = L1/LB/L
-// [5]  = R1/RB/R
-// [6]  = Share/View/Minus (Select)
-// [7]  = Options/Menu/Plus (Start)
-// [8]  = L3/LS/LS
-// [9]  = R3/RS/RS
-// [10] = PS/Xbox/Home
-// [11] = Touchpad (PS only)
-// [12-15] = D-Pad Up/Down/Left/Right

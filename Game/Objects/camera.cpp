@@ -9,9 +9,7 @@
 //==============================================================================
 #include "pch.h"
 #include "camera.h"
-#include "Engine/Input/keyboard.h"
-#include "Engine/Input/mouse.h"
-#include "Engine/Input/game_controller.h"
+#include "Engine/Input/input_manager.h"
 #include "player.h"
 #include "Game/Managers/player_manager.h"
 #include "Game/Map/map.h"
@@ -103,99 +101,48 @@ CameraManager& CameraManager::GetInstance() {
 // CameraManager更新処理
 //==========================================================
 void CameraManager::Update(float deltaTime) {
-    static bool controllerInitialized = false;
-    if (!controllerInitialized) {
-        GameController::Initialize();
-        controllerInitialized = true;
-    }
-
     // --- 定数定義 ---
     constexpr float rotateSpeed = 2.0f;
-    constexpr float mouseSensitivity = 0.2f;
-    constexpr float stickSensitivity = 3.0f;
-    constexpr float cameraDistance = 5.0f;
-    constexpr float cameraHeight = 2.0f;
 
-    // --- マウス入力 ---
-    Mouse_State mouseState;
-    Mouse_GetState(&mouseState);
+    // InputManagerからコマンドを取得
+    InputManager& inputMgr = InputManager::Instance();
+    const InputCommand& cmd = inputMgr.GetCommand();
 
+    // --- マウス右クリックでカメラ操作モード切替 ---
     static bool wasRightButtonDown = false;
-    if (mouseState.rightButton && !wasRightButtonDown) {
-        if (mouseState.positionMode == MOUSE_POSITION_MODE_ABSOLUTE) {
-            Mouse_SetMode(MOUSE_POSITION_MODE_RELATIVE);
-        }
-    } else if (!mouseState.rightButton && wasRightButtonDown) {
-        if (mouseState.positionMode == MOUSE_POSITION_MODE_RELATIVE) {
-            Mouse_SetMode(MOUSE_POSITION_MODE_ABSOLUTE);
-        }
-    }
-    wasRightButtonDown = mouseState.rightButton;
+    bool rightButtonDown = Mouse::Instance().IsPressed(MouseButton::Right);
 
-    if (mouseState.positionMode == MOUSE_POSITION_MODE_RELATIVE) {
-        if (mouseState.x != 0 || mouseState.y != 0) {
-            rotation += mouseState.x * mouseSensitivity;
-            pitch -= mouseState.y * mouseSensitivity;
-
-            if (pitch > 89.0f) pitch = 89.0f;
-            if (pitch < -89.0f) pitch = -89.0f;
-        }
+    if (rightButtonDown && !wasRightButtonDown) {
+        // 右クリック開始: マウスをロック（相対座標モード）
+        inputMgr.SetMouseLocked(true);
+    } else if (!rightButtonDown && wasRightButtonDown) {
+        // 右クリック終了: マウスをアンロック（絶対座標モード）
+        inputMgr.SetMouseLocked(false);
     }
+    wasRightButtonDown = rightButtonDown;
 
-    // --- キーボード追加入力（矢印キー） ---
-    if (Keyboard_IsKeyDown(KK_LEFT)) {
-        rotation -= rotateSpeed;
-    }
-    if (Keyboard_IsKeyDown(KK_RIGHT)) {
-        rotation += rotateSpeed;
-    }
+    // --- カメラ回転入力（InputManagerのlookX/lookYを使用） ---
+    // lookX/lookYにはマウス移動量とゲームパッド右スティックの両方が統合されている
+    if (inputMgr.IsMouseLocked() ||
+        std::fabs(cmd.rightStick.x) > 0.01f ||
+        std::fabs(cmd.rightStick.y) > 0.01f) {
+        rotation += cmd.lookX;
+        pitch -= cmd.lookY;
 
-    if (Keyboard_IsKeyDown(KK_UP)) {
-        pitch += rotateSpeed;
+        // ピッチ角度を制限
         if (pitch > 89.0f) pitch = 89.0f;
-    }
-    if (Keyboard_IsKeyDown(KK_DOWN)) {
-        pitch -= rotateSpeed;
         if (pitch < -89.0f) pitch = -89.0f;
     }
 
-    // --- GameController入力 ---
-    {
-        GamepadState pad;
-        const float rightDead = 0.12f;
-        bool applied = false;
-        if (GameController::GetState(pad)) {
-            if (fabsf(pad.rightStickX) > rightDead || fabsf(pad.rightStickY) > rightDead) {
-                pitch -= pad.rightStickX * stickSensitivity;
-                rotation += pad.rightStickY * stickSensitivity;
-                applied = true;
-            }
-        }
-        // フォールバック: GetStateでrightStickを返さない/壊れてる時に生値を直接読む
-        if (!applied) {
-            const int RAW_CENTER = 32767;
-            const float rawDeadNorm = 0.12f;
-            for (int id = 0; id < 16; ++id) {
-                int test = GameController::GetGamepadValue(id, 3);
-                if (test == 32767) continue;
-                int rawR = GameController::GetGamepadValue(id, 4); // dwRpos
-                int rawU = GameController::GetGamepadValue(id, 5); // dwUpos
-                int dx = rawR - RAW_CENTER;
-                int dy = rawU - RAW_CENTER;
-                float nx = (float)dx / (float)RAW_CENTER;
-                float ny = (float)dy / (float)RAW_CENTER;
-                if (fabsf(nx) > rawDeadNorm || fabsf(ny) > rawDeadNorm) {
-                    pitch -= nx * stickSensitivity;
-                    rotation += ny * stickSensitivity;
-                    applied = true;
-                    break;
-                }
-            }
-        }
-        if (applied) {
-            if (pitch > 89.0f) pitch = 89.0f;
-            if (pitch < -89.0f) pitch = -89.0f;
-        }
+    // --- カメラデバッグモード（矢印キーでの操作） ---
+    if (inputMgr.IsCameraDebugMode()) {
+        DirectX::XMFLOAT2 debugMove = inputMgr.GetCameraDebugMove();
+        // デバッグモードでは矢印キーで直接回転を制御
+        rotation += debugMove.x * deltaTime;
+        pitch += debugMove.y * deltaTime;
+
+        if (pitch > 89.0f) pitch = 89.0f;
+        if (pitch < -89.0f) pitch = -89.0f;
     }
 
     // --- アクティブプレイヤーに基づいてカメラを更新 ---

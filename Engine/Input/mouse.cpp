@@ -1,409 +1,417 @@
 /*********************************************************************
  * \file   mouse.cpp
- * \brief  マウス入力モジュール - DirectXTK改変版
- * 
+ * \brief  マウス入力モジュール実装
+ *
  * \author Ryoto Kikuchi
- * \date   2025/06/27
- * 
- * DirectXTKより、なんちゃってC言語用にシェイプアップ改変
- * Licensed under the MIT License.
- * http://go.microsoft.com/fwlink/?LinkId=248929
- * http://go.microsoft.com/fwlink/?LinkID=615561
+ * \date   2026/3/10
  *********************************************************************/
 #include "pch.h"
 #include "mouse.h"
-
 #include <windowsx.h>
-#include <assert.h>
+#include <cassert>
+#include <cstring>
 
-
-#define SAFE_CLOSEHANDLE(h) if(h){CloseHandle(h); h = NULL;}
-
-
-//==========================================================
-// 静的変数
-//==========================================================
-static Mouse_State        gState = {};
-static HWND               gWindow = NULL;
-static Mouse_PositionMode gMode = MOUSE_POSITION_MODE_ABSOLUTE;
-static HANDLE             gScrollWheelValue = NULL;
-static HANDLE             gRelativeRead = NULL;
-static HANDLE             gAbsoluteMode = NULL;
-static HANDLE             gRelativeMode = NULL;
-static int                gLastX = 0;
-static int                gLastY = 0;
-static int                gRelativeX = INT32_MAX;
-static int                gRelativeY = INT32_MAX;
-static bool               gInFocus = true;
-
-
-//==========================================================
-// clipToWindow - マウスカーソルをウィンドウ内にクリップする
-//==========================================================
-static void clipToWindow(void);
-
-
-//==========================================================
-// Mouse_Initialize - マウスモジュールの初期化
-//==========================================================
-void Mouse_Initialize(HWND window)
-{
-    RtlZeroMemory(&gState, sizeof(gState));
-
-    assert(window != NULL);
-
-    // --- Raw Input デバイスの登録 ---
-    RAWINPUTDEVICE Rid;
-    Rid.usUsagePage = 0x01 /* HID_USAGE_PAGE_GENERIC */;
-    Rid.usUsage = 0x02     /* HID_USAGE_GENERIC_MOUSE */;
-    Rid.dwFlags = RIDEV_INPUTSINK;
-    Rid.hwndTarget = window;
-    RegisterRawInputDevices(&Rid, 1, sizeof(RAWINPUTDEVICE));
-
-    gWindow = window;
-    gMode = MOUSE_POSITION_MODE_ABSOLUTE;
-
-    // --- イベントハンドルの作成 ---
-    if (!gScrollWheelValue) { gScrollWheelValue = CreateEventEx(nullptr, nullptr, CREATE_EVENT_MANUAL_RESET, EVENT_MODIFY_STATE | SYNCHRONIZE); }
-    if (!gRelativeRead) { gRelativeRead = CreateEventEx(nullptr, nullptr, CREATE_EVENT_MANUAL_RESET, EVENT_MODIFY_STATE | SYNCHRONIZE); }
-    if (!gAbsoluteMode) { gAbsoluteMode = CreateEventEx(nullptr, nullptr, 0, EVENT_MODIFY_STATE | SYNCHRONIZE); }
-    if (!gRelativeMode) { gRelativeMode = CreateEventEx(nullptr, nullptr, 0, EVENT_MODIFY_STATE | SYNCHRONIZE); }
-
-    gLastX = 0;
-    gLastY = 0;
-    gRelativeX = INT32_MAX;
-    gRelativeY = INT32_MAX;
-
-    gInFocus = true;
+ //==============================================================================
+ // シングルトンインスタンス
+ //==============================================================================
+Mouse& Mouse::Instance() {
+    static Mouse instance;
+    return instance;
 }
 
-//==========================================================
-// Mouse_Finalize - マウスモジュールの終了処理
-//==========================================================
-void Mouse_Finalize(void)
-{
-    SAFE_CLOSEHANDLE(gScrollWheelValue);
-    SAFE_CLOSEHANDLE(gRelativeRead);
-    SAFE_CLOSEHANDLE(gAbsoluteMode);
-    SAFE_CLOSEHANDLE(gRelativeMode);
-}
+//==============================================================================
+// 初期化
+//------------------------------------------------------------------------------
+// Raw Input デバイスを登録して高精度なマウス移動量を取得可能にする
+//==============================================================================
+void Mouse::Initialize(HWND window) {
+    assert(window != nullptr);
 
-//==========================================================
-// Mouse_GetState - マウスの状態を取得する
-//==========================================================
-void Mouse_GetState(Mouse_State* pState)
-{
-    memcpy(pState, &gState, sizeof(gState));
-    pState->positionMode = gMode;
+    m_window = window;
+    m_currentState = {};
+    m_previousState = {};
+    m_lastAbsX = 0;
+    m_lastAbsY = 0;
+    m_relativeX = INT32_MAX;
+    m_relativeY = INT32_MAX;
+    m_inFocus = true;
 
-    DWORD Result = WaitForSingleObjectEx(gScrollWheelValue, 0, FALSE);
-    if (Result == WAIT_FAILED) { return; }
+    //--------------------------------------------------------------------------
+    // Raw Input デバイス登録
+    // 相対座標モードで高精度なマウス移動量を取得するために必要
+    //--------------------------------------------------------------------------
+    RAWINPUTDEVICE rid = {};
+    rid.usUsagePage = 0x01;          // HID_USAGE_PAGE_GENERIC
+    rid.usUsage = 0x02;              // HID_USAGE_GENERIC_MOUSE
+    rid.dwFlags = RIDEV_INPUTSINK;   // バックグラウンドでも受信
+    rid.hwndTarget = window;
+    RegisterRawInputDevices(&rid, 1, sizeof(RAWINPUTDEVICE));
 
-    if (Result == WAIT_OBJECT_0) {
-        pState->scrollWheelValue = 0;
+    //--------------------------------------------------------------------------
+    // イベントハンドル作成
+    // スレッド間でモード切替を安全に行うための同期オブジェクト
+    //--------------------------------------------------------------------------
+    if (!m_scrollWheelEvent) {
+        m_scrollWheelEvent = CreateEventEx(
+            nullptr, nullptr,
+            CREATE_EVENT_MANUAL_RESET,
+            EVENT_MODIFY_STATE | SYNCHRONIZE
+        );
     }
-
-    if (pState->positionMode == MOUSE_POSITION_MODE_RELATIVE) {
-        Result = WaitForSingleObjectEx(gRelativeRead, 0, FALSE);
-        if (Result == WAIT_FAILED) { return; }
-
-        if (Result == WAIT_OBJECT_0) {
-            pState->x = 0;
-            pState->y = 0;
-        }
-        else {
-            SetEvent(gRelativeRead);
-        }
+    if (!m_relativeReadEvent) {
+        m_relativeReadEvent = CreateEventEx(
+            nullptr, nullptr,
+            CREATE_EVENT_MANUAL_RESET,
+            EVENT_MODIFY_STATE | SYNCHRONIZE
+        );
+    }
+    if (!m_absoluteModeEvent) {
+        m_absoluteModeEvent = CreateEventEx(
+            nullptr, nullptr,
+            0,
+            EVENT_MODIFY_STATE | SYNCHRONIZE
+        );
+    }
+    if (!m_relativeModeEvent) {
+        m_relativeModeEvent = CreateEventEx(
+            nullptr, nullptr,
+            0,
+            EVENT_MODIFY_STATE | SYNCHRONIZE
+        );
     }
 }
 
-//==========================================================
-// Mouse_ResetScrollWheelValue - スクロールホイール値をリセットする
-//==========================================================
-void Mouse_ResetScrollWheelValue(void)
-{
-    SetEvent(gScrollWheelValue);
+//==============================================================================
+// 終了処理
+//==============================================================================
+void Mouse::Finalize() {
+    auto safeClose = [](HANDLE& h) {
+        if (h) {
+            CloseHandle(h);
+            h = nullptr;
+        }
+        };
+
+    safeClose(m_scrollWheelEvent);
+    safeClose(m_relativeReadEvent);
+    safeClose(m_absoluteModeEvent);
+    safeClose(m_relativeModeEvent);
 }
 
-//==========================================================
-// Mouse_SetMode - マウスのポジションモードを設定する
-//==========================================================
-void Mouse_SetMode(Mouse_PositionMode mode)
-{
-    if (gMode == mode)
+//==============================================================================
+// 更新
+//==============================================================================
+void Mouse::Update() {
+    // 前フレームの状態を保存
+    m_previousState = m_currentState;
+
+    // ホイールリセットイベントチェック
+    if (WaitForSingleObjectEx(m_scrollWheelEvent, 0, FALSE) == WAIT_OBJECT_0) {
+        m_currentState.scrollWheel = 0;
+        ResetEvent(m_scrollWheelEvent);
+    }
+
+    // 相対座標モードの読み取り完了チェック
+    if (m_currentState.mode == MouseMode::Relative) {
+        if (WaitForSingleObjectEx(m_relativeReadEvent, 0, FALSE) == WAIT_OBJECT_0) {
+            // 読み取り済みなら座標をリセット
+            m_currentState.x = 0;
+            m_currentState.y = 0;
+        } else {
+            // 未読み取りならイベントをセット
+            SetEvent(m_relativeReadEvent);
+        }
+    }
+}
+
+//==============================================================================
+// モード切替イベント処理
+//==============================================================================
+void Mouse::ProcessModeSwitch() {
+    HANDLE events[] = { m_scrollWheelEvent, m_absoluteModeEvent, m_relativeModeEvent };
+    DWORD result = WaitForMultipleObjectsEx(3, events, FALSE, 0, FALSE);
+
+    switch (result) {
+    case WAIT_OBJECT_0:
+        // ホイールリセット
+        m_currentState.scrollWheel = 0;
+        ResetEvent(m_scrollWheelEvent);
+        break;
+
+    case WAIT_OBJECT_0 + 1:
+        //----------------------------------------------------------------------
+        // 絶対座標モードに切替
+        //----------------------------------------------------------------------
+        m_currentState.mode = MouseMode::Absolute;
+        ClipCursor(nullptr);  // カーソルクリップ解除
+        ShowCursor(TRUE);      // カーソル表示
+
+        // 保存していた座標にカーソルを戻す
+        {
+            POINT pt = { m_lastAbsX, m_lastAbsY };
+            if (MapWindowPoints(m_window, nullptr, &pt, 1)) {
+                SetCursorPos(pt.x, pt.y);
+            }
+        }
+        m_currentState.x = m_lastAbsX;
+        m_currentState.y = m_lastAbsY;
+        break;
+
+    case WAIT_OBJECT_0 + 2:
+        //----------------------------------------------------------------------
+        // 相対座標モードに切替
+        //----------------------------------------------------------------------
+        ResetEvent(m_relativeReadEvent);
+        m_currentState.mode = MouseMode::Relative;
+        m_currentState.x = 0;
+        m_currentState.y = 0;
+        m_relativeX = INT32_MAX;
+        m_relativeY = INT32_MAX;
+        ShowCursor(FALSE);     // カーソル非表示
+        ClipToWindow();        // カーソルをウィンドウ内にクリップ
+        break;
+    }
+}
+
+//==============================================================================
+// Windowsメッセージ処理
+//==============================================================================
+void Mouse::ProcessMessage(UINT message, WPARAM wParam, LPARAM lParam) {
+    // モード切替イベントをチェック
+    ProcessModeSwitch();
+
+    switch (message) {
+        //--------------------------------------------------------------------------
+        // ウィンドウアクティブ状態変化
+        //--------------------------------------------------------------------------
+    case WM_ACTIVATEAPP:
+        if (wParam) {
+            // アクティブになった
+            m_inFocus = true;
+            if (m_currentState.mode == MouseMode::Relative) {
+                m_currentState.x = 0;
+                m_currentState.y = 0;
+                ShowCursor(FALSE);
+                ClipToWindow();
+            }
+        } else {
+            // 非アクティブになった
+            int wheel = m_currentState.scrollWheel;
+            m_currentState = {};
+            m_currentState.scrollWheel = wheel;  // ホイール値は保持
+            m_inFocus = false;
+        }
         return;
 
-    SetEvent((mode == MOUSE_POSITION_MODE_ABSOLUTE) ? gAbsoluteMode : gRelativeMode);
+        //--------------------------------------------------------------------------
+        // Raw Input（相対座標モード用）
+        // 高精度なマウス移動量を取得
+        //--------------------------------------------------------------------------
+    case WM_INPUT:
+        if (m_inFocus && m_currentState.mode == MouseMode::Relative) {
+            RAWINPUT raw = {};
+            UINT rawSize = sizeof(raw);
+            GetRawInputData(
+                reinterpret_cast<HRAWINPUT>(lParam),
+                RID_INPUT,
+                &raw,
+                &rawSize,
+                sizeof(RAWINPUTHEADER)
+            );
 
-    assert(gWindow != NULL);
+            if (raw.header.dwType == RIM_TYPEMOUSE) {
+                if (!(raw.data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE)) {
+                    // 相対座標（通常のマウス）
+                    m_currentState.x = raw.data.mouse.lLastX;
+                    m_currentState.y = raw.data.mouse.lLastY;
+                    ResetEvent(m_relativeReadEvent);
+                } else if (raw.data.mouse.usFlags & MOUSE_VIRTUAL_DESKTOP) {
+                    // 絶対座標（リモートデスクトップ等）
+                    // 移動量を計算
+                    int width = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+                    int height = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+                    int x = static_cast<int>((raw.data.mouse.lLastX / 65535.0f) * width);
+                    int y = static_cast<int>((raw.data.mouse.lLastY / 65535.0f) * height);
 
-    TRACKMOUSEEVENT tme;
+                    if (m_relativeX == INT32_MAX) {
+                        m_currentState.x = 0;
+                        m_currentState.y = 0;
+                    } else {
+                        m_currentState.x = x - m_relativeX;
+                        m_currentState.y = y - m_relativeY;
+                    }
+                    m_relativeX = x;
+                    m_relativeY = y;
+                    ResetEvent(m_relativeReadEvent);
+                }
+            }
+        }
+        return;
+
+        //--------------------------------------------------------------------------
+        // ボタン操作
+        //--------------------------------------------------------------------------
+    case WM_LBUTTONDOWN:
+        m_currentState.buttons[static_cast<int>(MouseButton::Left)] = true;
+        break;
+    case WM_LBUTTONUP:
+        m_currentState.buttons[static_cast<int>(MouseButton::Left)] = false;
+        break;
+    case WM_RBUTTONDOWN:
+        m_currentState.buttons[static_cast<int>(MouseButton::Right)] = true;
+        break;
+    case WM_RBUTTONUP:
+        m_currentState.buttons[static_cast<int>(MouseButton::Right)] = false;
+        break;
+    case WM_MBUTTONDOWN:
+        m_currentState.buttons[static_cast<int>(MouseButton::Middle)] = true;
+        break;
+    case WM_MBUTTONUP:
+        m_currentState.buttons[static_cast<int>(MouseButton::Middle)] = false;
+        break;
+
+        //--------------------------------------------------------------------------
+        // ホイール
+        //--------------------------------------------------------------------------
+    case WM_MOUSEWHEEL:
+        m_currentState.scrollWheel += GET_WHEEL_DELTA_WPARAM(wParam);
+        return;
+
+        //--------------------------------------------------------------------------
+        // 拡張ボタン（サイドボタン）
+        //--------------------------------------------------------------------------
+    case WM_XBUTTONDOWN:
+        if (GET_XBUTTON_WPARAM(wParam) == XBUTTON1)
+            m_currentState.buttons[static_cast<int>(MouseButton::X1)] = true;
+        else if (GET_XBUTTON_WPARAM(wParam) == XBUTTON2)
+            m_currentState.buttons[static_cast<int>(MouseButton::X2)] = true;
+        break;
+    case WM_XBUTTONUP:
+        if (GET_XBUTTON_WPARAM(wParam) == XBUTTON1)
+            m_currentState.buttons[static_cast<int>(MouseButton::X1)] = false;
+        else if (GET_XBUTTON_WPARAM(wParam) == XBUTTON2)
+            m_currentState.buttons[static_cast<int>(MouseButton::X2)] = false;
+        break;
+
+        //--------------------------------------------------------------------------
+        // マウス移動
+        //--------------------------------------------------------------------------
+    case WM_MOUSEMOVE:
+    case WM_MOUSEHOVER:
+        break;
+
+    default:
+        return;
+    }
+
+    //--------------------------------------------------------------------------
+    // 絶対座標モードの場合、座標を更新
+    //--------------------------------------------------------------------------
+    if (m_currentState.mode == MouseMode::Absolute) {
+        m_currentState.x = GET_X_LPARAM(lParam);
+        m_currentState.y = GET_Y_LPARAM(lParam);
+        m_lastAbsX = m_currentState.x;
+        m_lastAbsY = m_currentState.y;
+    }
+}
+
+//==============================================================================
+// ボタン状態取得
+//==============================================================================
+bool Mouse::IsPressed(MouseButton button) const {
+    return m_currentState.buttons[static_cast<int>(button)];
+}
+
+bool Mouse::IsTrigger(MouseButton button) const {
+    int idx = static_cast<int>(button);
+    return m_currentState.buttons[idx] && !m_previousState.buttons[idx];
+}
+
+bool Mouse::IsRelease(MouseButton button) const {
+    int idx = static_cast<int>(button);
+    return !m_currentState.buttons[idx] && m_previousState.buttons[idx];
+}
+
+//==============================================================================
+// その他
+//==============================================================================
+void Mouse::ResetScrollWheel() {
+    SetEvent(m_scrollWheelEvent);
+}
+
+Mouse::State Mouse::GetState() const {
+    State state = m_currentState;
+
+    // ホイールリセット待ちの場合は0を返す
+    if (WaitForSingleObjectEx(m_scrollWheelEvent, 0, FALSE) == WAIT_OBJECT_0) {
+        state.scrollWheel = 0;
+    }
+
+    // 相対座標読み取り済みの場合は0を返す
+    if (state.mode == MouseMode::Relative) {
+        if (WaitForSingleObjectEx(m_relativeReadEvent, 0, FALSE) == WAIT_OBJECT_0) {
+            state.x = 0;
+            state.y = 0;
+        }
+    }
+
+    return state;
+}
+
+void Mouse::SetMode(MouseMode mode) {
+    if (m_currentState.mode == mode) return;
+
+    // モード切替イベントをセット
+    SetEvent(mode == MouseMode::Absolute ? m_absoluteModeEvent : m_relativeModeEvent);
+
+    // マウスホバーイベントを発生させてモード切替を処理させる
+    TRACKMOUSEEVENT tme = {};
     tme.cbSize = sizeof(tme);
     tme.dwFlags = TME_HOVER;
-    tme.hwndTrack = gWindow;
+    tme.hwndTrack = m_window;
     tme.dwHoverTime = 1;
     TrackMouseEvent(&tme);
 }
 
-//==========================================================
-// Mouse_IsConnected - マウスの接続を検出する
-//==========================================================
-bool Mouse_IsConnected(void)
-{
-    return GetSystemMetrics(SM_MOUSEPRESENT) != 0;
-}
+void Mouse::SetVisible(bool visible) {
+    // Relativeモードでは常に非表示
+    if (m_currentState.mode == MouseMode::Relative) return;
 
-//==========================================================
-// Mouse_IsVisible - マウスカーソルが表示されているか確認する
-//==========================================================
-bool Mouse_IsVisible(void)
-{
-    if (gMode == MOUSE_POSITION_MODE_RELATIVE) {
-        return false;
-    }
-
-    CURSORINFO info = { sizeof(CURSORINFO), 0, nullptr, {} };
-    GetCursorInfo(&info);
-
-    return (info.flags & CURSOR_SHOWING) != 0;
-}
-
-//==========================================================
-// Mouse_SetVisible - マウスカーソル表示を設定する
-//==========================================================
-void Mouse_SetVisible(bool visible)
-{
-    if (gMode == MOUSE_POSITION_MODE_RELATIVE) {
-        return;
-    }
-
-    CURSORINFO info = { sizeof(CURSORINFO), 0, nullptr, {} };
+    CURSORINFO info = { sizeof(CURSORINFO) };
     GetCursorInfo(&info);
 
     bool isVisible = (info.flags & CURSOR_SHOWING) != 0;
-
     if (isVisible != visible) {
         ShowCursor(visible);
     }
 }
 
-//==========================================================
-// Mouse_ProcessMessage - ウィンドウメッセージプロシージャフック関数
-//==========================================================
-void Mouse_ProcessMessage(UINT message, WPARAM wParam, LPARAM lParam)
-{
-    HANDLE evts[3] = {
-        gScrollWheelValue,
-        gAbsoluteMode,
-        gRelativeMode
-    };
+bool Mouse::IsVisible() const {
+    if (m_currentState.mode == MouseMode::Relative) return false;
 
-    switch (WaitForMultipleObjectsEx(_countof(evts), evts, FALSE, 0, FALSE))
-    {
-    case WAIT_OBJECT_0:
-        gState.scrollWheelValue = 0;
-        ResetEvent(evts[0]);
-        break;
-
-    case (WAIT_OBJECT_0 + 1):
-    {
-        gMode = MOUSE_POSITION_MODE_ABSOLUTE;
-        ClipCursor(nullptr);
-
-        POINT point;
-        point.x = gLastX;
-        point.y = gLastY;
-
-        // リモートデスクトップに対応するために移動前にカーソルを表示する
-        ShowCursor(TRUE);
-
-        if (MapWindowPoints(gWindow, nullptr, &point, 1)) {
-            SetCursorPos(point.x, point.y);
-        }
-
-        gState.x = gLastX;
-        gState.y = gLastY;
-    }
-    break;
-
-    case (WAIT_OBJECT_0 + 2):
-    {
-        ResetEvent(gRelativeRead);
-
-        gMode = MOUSE_POSITION_MODE_RELATIVE;
-        gState.x = gState.y = 0;
-        gRelativeX = INT32_MAX;
-        gRelativeY = INT32_MAX;
-
-        ShowCursor(FALSE);
-
-        clipToWindow();
-    }
-    break;
-
-    case WAIT_FAILED:
-        return;
-    }
-
-    switch (message)
-    {
-    case WM_ACTIVATEAPP:
-        if (wParam) {
-            gInFocus = true;
-
-            if (gMode == MOUSE_POSITION_MODE_RELATIVE) {
-                gState.x = gState.y = 0;
-                ShowCursor(FALSE);
-                clipToWindow();
-            }
-        }
-        else {
-            int scrollWheel = gState.scrollWheelValue;
-            memset(&gState, 0, sizeof(gState));
-            gState.scrollWheelValue = scrollWheel;
-            gInFocus = false;
-        }
-        return;
-
-    case WM_INPUT:
-        if (gInFocus && gMode == MOUSE_POSITION_MODE_RELATIVE) {
-            RAWINPUT raw;
-            UINT rawSize = sizeof(raw);
-
-            GetRawInputData((HRAWINPUT)lParam, RID_INPUT, &raw, &rawSize, sizeof(RAWINPUTHEADER));
-
-            if (raw.header.dwType == RIM_TYPEMOUSE) {
-                if (!(raw.data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE)) {
-                    gState.x = raw.data.mouse.lLastX;
-                    gState.y = raw.data.mouse.lLastY;
-
-                    ResetEvent(gRelativeRead);
-                }
-                else if (raw.data.mouse.usFlags & MOUSE_VIRTUAL_DESKTOP) {
-                    // リモートデスクトップなどに対応
-                    const int width = GetSystemMetrics(SM_CXVIRTUALSCREEN);
-                    const int height = GetSystemMetrics(SM_CYVIRTUALSCREEN);
-
-                    int x = (int)((raw.data.mouse.lLastX / 65535.0f) * width);
-                    int y = (int)((raw.data.mouse.lLastY / 65535.0f) * height);
-
-                    if (gRelativeX == INT32_MAX) {
-                        gState.x = gState.y = 0;
-                    }
-                    else {
-                        gState.x = x - gRelativeX;
-                        gState.y = y - gRelativeY;
-                    }
-
-                    gRelativeX = x;
-                    gRelativeY = y;
-
-                    ResetEvent(gRelativeRead);
-                }
-            }
-        }
-        return;
-
-
-    case WM_MOUSEMOVE:
-        break;
-
-    case WM_LBUTTONDOWN:
-        gState.leftButton = true;
-        break;
-
-    case WM_LBUTTONUP:
-        gState.leftButton = false;
-        break;
-
-    case WM_RBUTTONDOWN:
-        gState.rightButton = true;
-        break;
-
-    case WM_RBUTTONUP:
-        gState.rightButton = false;
-        break;
-
-    case WM_MBUTTONDOWN:
-        gState.middleButton = true;
-        break;
-
-    case WM_MBUTTONUP:
-        gState.middleButton = false;
-        break;
-
-    case WM_MOUSEWHEEL:
-        gState.scrollWheelValue += GET_WHEEL_DELTA_WPARAM(wParam);
-        return;
-
-    case WM_XBUTTONDOWN:
-        switch (GET_XBUTTON_WPARAM(wParam))
-        {
-        case XBUTTON1:
-            gState.xButton1 = true;
-            break;
-
-        case XBUTTON2:
-            gState.xButton2 = true;
-            break;
-        }
-        break;
-
-    case WM_XBUTTONUP:
-        switch (GET_XBUTTON_WPARAM(wParam))
-        {
-        case XBUTTON1:
-            gState.xButton1 = false;
-            break;
-
-        case XBUTTON2:
-            gState.xButton2 = false;
-            break;
-        }
-        break;
-
-    case WM_MOUSEHOVER:
-        break;
-
-    default:
-        // マウスに対するメッセージは無かった
-        return;
-    }
-
-    if (gMode == MOUSE_POSITION_MODE_ABSOLUTE) {
-        // すべてのマウスメッセージに対して新しい座標を取得する
-        int xPos = GET_X_LPARAM(lParam);
-        int yPos = GET_Y_LPARAM(lParam);
-
-        gState.x = gLastX = xPos;
-        gState.y = gLastY = yPos;
-    }
+    CURSORINFO info = { sizeof(CURSORINFO) };
+    GetCursorInfo(&info);
+    return (info.flags & CURSOR_SHOWING) != 0;
 }
 
-//==========================================================
-// clipToWindow - マウスカーソルをウィンドウ内にクリップする
-//==========================================================
-void clipToWindow(void)
-{
-    assert(gWindow != NULL);
+bool Mouse::IsConnected() const {
+    return GetSystemMetrics(SM_MOUSEPRESENT) != 0;
+}
+
+void Mouse::ClipToWindow() {
+    assert(m_window != nullptr);
 
     RECT rect;
-    GetClientRect(gWindow, &rect);
+    GetClientRect(m_window, &rect);
 
-    POINT ul;
-    ul.x = rect.left;
-    ul.y = rect.top;
+    POINT ul = { rect.left, rect.top };
+    POINT lr = { rect.right, rect.bottom };
 
-    POINT lr;
-    lr.x = rect.right;
-    lr.y = rect.bottom;
-
-    MapWindowPoints(gWindow, NULL, &ul, 1);
-    MapWindowPoints(gWindow, NULL, &lr, 1);
+    MapWindowPoints(m_window, nullptr, &ul, 1);
+    MapWindowPoints(m_window, nullptr, &lr, 1);
 
     rect.left = ul.x;
     rect.top = ul.y;
-
     rect.right = lr.x;
     rect.bottom = lr.y;
 

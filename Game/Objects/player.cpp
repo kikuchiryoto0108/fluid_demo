@@ -136,28 +136,113 @@ void Player::UpdateCollider() {
 void Player::Update(float deltaTime) {
     if (!isAlive) return;
 
-    // --- 空中なら重力を適用 ---
+    // 前フレームの接地状態を保存
+    m_wasGrounded = isGrounded;
+
+    // --- 重力適用（接地中は下向き速度を0に保つ） ---
     if (!isGrounded) {
         velocity.y += GRAVITY * deltaTime;
+        // 落下速度制限
+        if (velocity.y < -30.0f) {
+            velocity.y = -30.0f;
+        }
+    } else {
+        // 接地中で下に落ちようとしている場合のみリセット
+        if (velocity.y < 0.0f) {
+            velocity.y = 0.0f;
+        }
     }
 
     // --- 速度に基づいて位置を更新 ---
-    position.x += velocity.x * deltaTime;
-    position.y += velocity.y * deltaTime;
-    position.z += velocity.z * deltaTime;
+    XMFLOAT3 newPosition = position;
+    newPosition.x += velocity.x * deltaTime;
+    newPosition.y += velocity.y * deltaTime;
+    newPosition.z += velocity.z * deltaTime;
 
-    UpdateCollider();
+    // --- コライダーを新しい位置に更新 ---
+    collider.SetCenter(newPosition);
 
-    // --- マップとの衝突判定（グリッドベース） ---
-    isGrounded = false;
-    auto penetrations = Engine::MapCollision::GetInstance().CheckCollisionAll(&collider, 3.0f);
+    // --- マップとの衝突判定 ---
+    bool groundedThisFrame = false;
+    auto penetrations = Engine::MapCollision::GetInstance().CheckCollisionAll(&collider, 2.0f);
+
+    // Y軸の補正を先に処理（地面判定を優先）
+    float totalPenY = 0.0f;
     for (const auto& pen : penetrations) {
-        ApplyPenetration(pen);
+        if (pen.y > 0.0f) {
+            // 上に押し戻し = 地面に着地
+            totalPenY = std::max(totalPenY, pen.y);
+            groundedThisFrame = true;
+        } else if (pen.y < 0.0f) {
+            // 下に押し戻し = 天井にぶつかった
+            totalPenY = std::min(totalPenY, pen.y);
+        }
     }
 
+    // Y軸補正を適用
+    if (totalPenY != 0.0f) {
+        newPosition.y += totalPenY;
+        velocity.y = 0.0f;
+    }
+
+    // X, Z軸の補正
+    for (const auto& pen : penetrations) {
+        if (pen.x != 0.0f) {
+            newPosition.x += pen.x;
+            velocity.x = 0.0f;
+        }
+        if (pen.z != 0.0f) {
+            newPosition.z += pen.z;
+            velocity.z = 0.0f;
+        }
+    }
+
+    // --- 接地状態の安定化（コヨーテタイム） ---
+    if (groundedThisFrame) {
+        isGrounded = true;
+        m_groundedTimer = m_coyoteTime;
+    } else {
+        // 猶予時間内は接地状態を維持
+        m_groundedTimer -= deltaTime;
+        if (m_groundedTimer <= 0.0f) {
+            isGrounded = false;
+            m_groundedTimer = 0.0f;
+        }
+    }
+
+    // --- 地面スナップ（接地していたのに今フレーム接地していない場合） ---
+    if (m_wasGrounded && !groundedThisFrame && velocity.y <= 0.0f) {
+        // 少し下を調べて地面があればスナップ
+        XMFLOAT3 snapTestPos = newPosition;
+        snapTestPos.y -= 0.15f;  // スナップ距離
+        collider.SetCenter(snapTestPos);
+
+        auto snapPenetrations = Engine::MapCollision::GetInstance().CheckCollisionAll(&collider, 1.0f);
+        for (const auto& pen : snapPenetrations) {
+            if (pen.y > 0.0f) {
+                // 地面が見つかった
+                newPosition.y = snapTestPos.y + pen.y;
+                velocity.y = 0.0f;
+                isGrounded = true;
+                m_groundedTimer = m_coyoteTime;
+                break;
+            }
+        }
+    }
+
+    // --- 位置確定 ---
+    position = newPosition;
+    collider.SetCenter(position);
+
     // --- 摩擦で水平速度を減衰 ---
-    velocity.x *= FRICTION;
-    velocity.z *= FRICTION;
+    if (isGrounded) {
+        velocity.x *= FRICTION;
+        velocity.z *= FRICTION;
+    } else {
+        // 空中でも少し減衰（空気抵抗）
+        velocity.x *= 0.98f;
+        velocity.z *= 0.98f;
+    }
 
     // --- 微小な速度はゼロに切り捨て ---
     if (fabsf(velocity.x) < 0.01f) velocity.x = 0.0f;
@@ -186,10 +271,11 @@ void Player::Move(const XMFLOAT3& direction, float deltaTime) {
 // ジャンプ処理
 //==========================================================
 void Player::Jump() {
-    // 接地中のみジャンプ可能
-    if (isGrounded) {
+    // 接地中またはコヨーテタイム内ならジャンプ可能
+    if (isGrounded || m_groundedTimer > 0.0f) {
         velocity.y = JUMP_POWER;
         isGrounded = false;
+        m_groundedTimer = 0.0f;  // ジャンプしたら猶予をリセット
     }
 }
 
@@ -221,7 +307,6 @@ void Player::ApplyPenetration(const XMFLOAT3& penetration) {
 //==========================================================
 void Player::Draw() {
     if (!isAlive) {
-        OutputDebugStringA("[Player::Draw] SKIP: not alive\n");
         return;
     }
 

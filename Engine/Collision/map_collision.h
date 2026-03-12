@@ -17,37 +17,43 @@ namespace Engine {
 
     //==========================================================
     // MapCollision - マップ衝突システム（シングルトン）
-    // 空間ハッシュグリッドを使用した効率的な衝突検出
     //==========================================================
     class MapCollision {
     public:
         static MapCollision& GetInstance();
 
-        // --- 初期化・終了 ---
         void Initialize(float cellSize = 2.0f);
         void Shutdown();
 
-        // --- ブロック管理 ---
         void RegisterBlock(BoxCollider* collider);
         void Clear();
 
-        // --- 近傍検索 ---
+        // 最適化: 結果を参照で受け取る版
+        void GetNearbyBlocks(const XMFLOAT3& position, float radius, std::vector<BoxCollider*>& outBlocks);
+
+        // 従来版（互換性のため残す）
         std::vector<BoxCollider*> GetNearbyBlocks(const XMFLOAT3& position, float radius);
 
-        // --- 衝突判定 ---
         bool CheckCollision(BoxCollider* movingCollider, XMFLOAT3& outPenetration);
+
+        // 最適化: 結果を参照で受け取る版
+        void CheckCollisionAll(BoxCollider* movingCollider, float checkRadius, std::vector<XMFLOAT3>& outPenetrations);
+
+        // 従来版（互換性のため残す）
         std::vector<XMFLOAT3> CheckCollisionAll(BoxCollider* movingCollider, float checkRadius = 3.0f);
 
     private:
         MapCollision() = default;
 
-        // --- 空間ハッシュ計算 ---
         int64_t GetCellKey(int x, int y, int z) const;
         void GetCellCoord(const XMFLOAT3& pos, int& outX, int& outY, int& outZ) const;
 
-        // --- メンバ変数 ---
-        float m_cellSize = 2.0f;  // グリッドセルサイズ
-        std::unordered_map<int64_t, std::vector<BoxCollider*>> m_grid;  // 空間ハッシュグリッド
+        float m_cellSize = 2.0f;
+        std::unordered_map<int64_t, std::vector<BoxCollider*>> m_grid;
+
+        // 最適化: 再利用可能なワークバッファ
+        mutable std::vector<BoxCollider*> m_nearbyBuffer;
+        mutable std::vector<XMFLOAT3> m_penetrationBuffer;
     };
 
 } // namespace Engine

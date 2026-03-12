@@ -13,32 +13,25 @@
 
 namespace Engine {
 
-    //==========================================================
-    // シングルトンインスタンス取得
-    //==========================================================
     MapCollision& MapCollision::GetInstance() {
         static MapCollision instance;
         return instance;
     }
 
-    //==========================================================
-    // Initialize - システム初期化
-    //==========================================================
     void MapCollision::Initialize(float cellSize) {
         m_cellSize = cellSize;
         m_grid.clear();
+        // バッファを事前確保
+        m_nearbyBuffer.reserve(64);
+        m_penetrationBuffer.reserve(16);
     }
 
-    //==========================================================
-    // Shutdown - システム終了
-    //==========================================================
     void MapCollision::Shutdown() {
         m_grid.clear();
+        m_nearbyBuffer.clear();
+        m_penetrationBuffer.clear();
     }
 
-    //==========================================================
-    // RegisterBlock - 静的ブロックをグリッドに登録
-    //==========================================================
     void MapCollision::RegisterBlock(BoxCollider* collider) {
         if (!collider) return;
 
@@ -50,18 +43,11 @@ namespace Engine {
         m_grid[key].push_back(collider);
     }
 
-    //==========================================================
-    // Clear - グリッドのクリア
-    //==========================================================
     void MapCollision::Clear() {
         m_grid.clear();
     }
 
-    //==========================================================
-    // GetCellKey - 3Dセル座標から64ビットキーを生成
-    //==========================================================
     int64_t MapCollision::GetCellKey(int x, int y, int z) const {
-        // 各軸21ビットで64ビットキーにパック
         int64_t key = 0;
         key |= (static_cast<int64_t>(x & 0x1FFFFF)) << 42;
         key |= (static_cast<int64_t>(y & 0x1FFFFF)) << 21;
@@ -69,9 +55,6 @@ namespace Engine {
         return key;
     }
 
-    //==========================================================
-    // GetCellCoord - ワールド座標からセル座標を計算
-    //==========================================================
     void MapCollision::GetCellCoord(const XMFLOAT3& pos, int& outX, int& outY, int& outZ) const {
         outX = static_cast<int>(std::floor(pos.x / m_cellSize));
         outY = static_cast<int>(std::floor(pos.y / m_cellSize));
@@ -79,45 +62,44 @@ namespace Engine {
     }
 
     //==========================================================
-    // GetNearbyBlocks - 指定位置周辺のブロックを取得
+    // 最適化版: バッファを再利用
     //==========================================================
-    std::vector<BoxCollider*> MapCollision::GetNearbyBlocks(const XMFLOAT3& position, float radius) {
-        std::vector<BoxCollider*> result;
+    void MapCollision::GetNearbyBlocks(const XMFLOAT3& position, float radius, std::vector<BoxCollider*>& outBlocks) {
+        outBlocks.clear();
 
         int centerX, centerY, centerZ;
         GetCellCoord(position, centerX, centerY, centerZ);
 
-        // 検索範囲をセル数に変換
-        int cellRadius = static_cast<int>(std::ceil(radius / m_cellSize)) + 1;
+        // 検索範囲を最小限に（1セルで十分な場合が多い）
+        int cellRadius = static_cast<int>(std::ceil(radius / m_cellSize));
+        cellRadius = std::min(cellRadius, 2);  // 最大2セルに制限
 
-        // --- 近傍セルを走査 ---
         for (int dx = -cellRadius; dx <= cellRadius; ++dx) {
             for (int dy = -cellRadius; dy <= cellRadius; ++dy) {
                 for (int dz = -cellRadius; dz <= cellRadius; ++dz) {
                     int64_t key = GetCellKey(centerX + dx, centerY + dy, centerZ + dz);
                     auto it = m_grid.find(key);
                     if (it != m_grid.end()) {
-                        for (auto* block : it->second) {
-                            result.push_back(block);
-                        }
+                        outBlocks.insert(outBlocks.end(), it->second.begin(), it->second.end());
                     }
                 }
             }
         }
-
-        return result;
     }
 
-    //==========================================================
-    // CheckCollision - 最初に見つかった衝突を返す
-    //==========================================================
+    // 従来版（互換性）
+    std::vector<BoxCollider*> MapCollision::GetNearbyBlocks(const XMFLOAT3& position, float radius) {
+        GetNearbyBlocks(position, radius, m_nearbyBuffer);
+        return m_nearbyBuffer;  // コピーを返す
+    }
+
     bool MapCollision::CheckCollision(BoxCollider* movingCollider, XMFLOAT3& outPenetration) {
         if (!movingCollider) return false;
 
         XMFLOAT3 center = movingCollider->GetCenter();
-        auto nearby = GetNearbyBlocks(center, 3.0f);
+        GetNearbyBlocks(center, 2.0f, m_nearbyBuffer);  // 検索範囲を縮小
 
-        for (auto* block : nearby) {
+        for (auto* block : m_nearbyBuffer) {
             if (movingCollider->ComputePenetration(block, outPenetration)) {
                 return true;
             }
@@ -128,23 +110,27 @@ namespace Engine {
     }
 
     //==========================================================
-    // CheckCollisionAll - 全ての衝突のめり込み量を返す
+    // 最適化版: バッファを再利用
     //==========================================================
-    std::vector<XMFLOAT3> MapCollision::CheckCollisionAll(BoxCollider* movingCollider, float checkRadius) {
-        std::vector<XMFLOAT3> penetrations;
-        if (!movingCollider) return penetrations;
+    void MapCollision::CheckCollisionAll(BoxCollider* movingCollider, float checkRadius, std::vector<XMFLOAT3>& outPenetrations) {
+        outPenetrations.clear();
+        if (!movingCollider) return;
 
         XMFLOAT3 center = movingCollider->GetCenter();
-        auto nearby = GetNearbyBlocks(center, checkRadius);
+        GetNearbyBlocks(center, checkRadius, m_nearbyBuffer);
 
-        for (auto* block : nearby) {
-            XMFLOAT3 pen;
+        XMFLOAT3 pen;
+        for (auto* block : m_nearbyBuffer) {
             if (movingCollider->ComputePenetration(block, pen)) {
-                penetrations.push_back(pen);
+                outPenetrations.push_back(pen);
             }
         }
+    }
 
-        return penetrations;
+    // 従来版（互換性）
+    std::vector<XMFLOAT3> MapCollision::CheckCollisionAll(BoxCollider* movingCollider, float checkRadius) {
+        CheckCollisionAll(movingCollider, checkRadius, m_penetrationBuffer);
+        return m_penetrationBuffer;  // コピーを返す
     }
 
 } // namespace Engine

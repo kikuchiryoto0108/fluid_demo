@@ -40,6 +40,11 @@ private:
     XMFLOAT3 rotation;
     XMFLOAT3 scale;
 
+    // --- 接地安定化 ---
+    bool m_wasGrounded = false;      // 前フレームの接地状態
+    float m_groundedTimer = 0.0f;    // 接地猶予タイマー（コヨーテタイム）
+    float m_coyoteTime = 0.1f;       // 接地猶予時間（秒
+
     // --- 衝突判定 ---
     Engine::BoxCollider collider;
     GameObject visualObject;

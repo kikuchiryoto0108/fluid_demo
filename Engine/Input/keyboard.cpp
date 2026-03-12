@@ -1,177 +1,69 @@
 /*********************************************************************
  * \file   keyboard.cpp
- * \brief  キーボード入力モジュール - DirectXTK改変版
- * 
+ * \brief  キーボード入力モジュール実装
+ *
  * \author Ryoto Kikuchi
- * \date   2020/06/07
- * 
- * DirectXTKより、なんちゃってC言語用にシェイプアップ改変
- * Licensed under the MIT License.
- * http://go.microsoft.com/fwlink/?LinkId=248929
- * http://go.microsoft.com/fwlink/?LinkID=615561
+ * \date   2026/3/10
  *********************************************************************/
 #include "pch.h"
 #include "keyboard.h"
+#include <cstring>
 
-#include <assert.h>
-
-static_assert(sizeof(Keyboard_State) == 256 / 8, "キーボード状態構造体のサイズ不一致");
-
-
-//==========================================================
-// 静的変数
-//==========================================================
-static Keyboard_State gState = {};
-static Keyboard_State gStateOld = {};
-
-
-//==========================================================
-// keycopy - 前回のキー情報を保存
-//==========================================================
-void keycopy()
-{
-    gStateOld = gState;
+ //==============================================================================
+ // シングルトンインスタンス
+ //==============================================================================
+Keyboard& Keyboard::Instance() {
+    static Keyboard instance;
+    return instance;
 }
 
-//==========================================================
-// keyDown - キー押下状態の設定
-//==========================================================
-static void keyDown(int key)
-{
-    if (key < 0 || key > 0xfe) { return; }
-
-    unsigned int* p = (unsigned int*)&gState;
-    unsigned int bf = 1u << (key & 0x1f);
- 
-    p[(key >> 5)] |= bf;
+//==============================================================================
+// 初期化
+//==============================================================================
+void Keyboard::Initialize() {
+    Reset();
 }
 
-
-//==========================================================
-// keyUp - キー解放状態の設定
-//==========================================================
-static void keyUp(int key)
-{
-    if (key < 0 || key > 0xfe) { return; }
-
-    unsigned int* p = (unsigned int*)&gState;
-    unsigned int bf = 1u << (key & 0x1f);
-    p[(key >> 5)] &= ~bf;
+//==============================================================================
+// 更新（毎フレーム呼ぶ）
+//------------------------------------------------------------------------------
+// 現在の状態を前フレームの状態としてコピー
+// これによりTrigger/Release判定が可能になる
+//==============================================================================
+void Keyboard::Update() {
+    std::memcpy(m_previousState, m_currentState, sizeof(m_currentState));
 }
 
-
-//==========================================================
-// Keyboard_Initialize - キーボードモジュールの初期化
-//==========================================================
-void Keyboard_Initialize(void)
-{
-    Keyboard_Reset();
+//==============================================================================
+// リセット
+//------------------------------------------------------------------------------
+// ウィンドウ非アクティブ時に呼ぶ
+// 全キーを離された状態にする
+//==============================================================================
+void Keyboard::Reset() {
+    std::memset(m_currentState, 0, sizeof(m_currentState));
+    std::memset(m_previousState, 0, sizeof(m_previousState));
 }
 
-
-//==========================================================
-// Keyboard_IsKeyDown - 指定された状態でキーが押されているか確認
-//==========================================================
-bool Keyboard_IsKeyDown(Keyboard_Keys key, const Keyboard_State* pState)
-{
-    if (key <= 0xfe)
-    {
-        unsigned int* p = (unsigned int*)pState;
-        unsigned int bf = 1u << (key & 0x1f);
-        return (p[(key >> 5)] & bf) != 0;
-    }
-    return false;
-}
-
-//==========================================================
-// Keyboard_IsKeyDownTrigger - キーが押された瞬間を検出
-//==========================================================
-bool Keyboard_IsKeyDownTrigger(Keyboard_Keys key)
-{
-    if (key <= 0xfe)
-    {
-        unsigned int* p = (unsigned int*)&gState;
-        unsigned int* p2 = (unsigned int*)&gStateOld;
-
-        unsigned int bf = 1u << (key & 0x1f);
-
-        return ((p[(key >> 5)] & bf) ^ (p2[(key >> 5)] & bf)) & (p[(key >> 5)] & bf);
-    }
-    return false;
-}
-
-
-//==========================================================
-// Keyboard_IsKeyUp - 指定された状態でキーが離されているか確認
-//==========================================================
-bool Keyboard_IsKeyUp(Keyboard_Keys key, const Keyboard_State* pState)
-{
-    if (key <= 0xfe)
-    {
-        unsigned int* p = (unsigned int*)pState;
-        unsigned int bf = 1u << (key & 0x1f);
-        return (p[(key >> 5)] & bf) == 0;
-    }
-    return false;
-}
-
-
-//==========================================================
-// Keyboard_IsKeyDown - 現在の状態でキーが押されているか確認
-//==========================================================
-bool Keyboard_IsKeyDown(Keyboard_Keys key)
-{
-    return Keyboard_IsKeyDown(key, &gState);
-}
-
-
-//==========================================================
-// Keyboard_IsKeyUp - 現在の状態でキーが離されているか確認
-//==========================================================
-bool Keyboard_IsKeyUp(Keyboard_Keys key)
-{
-    return Keyboard_IsKeyUp(key, &gState);
-}
-
-
-//==========================================================
-// Keyboard_GetState - キーボードの現在の状態を取得する
-//==========================================================
-const Keyboard_State* Keyboard_GetState(void)
-{
-    return &gState;
-}
-
-//==========================================================
-// Keyboard_GetStateOld - キーボードの前フレームの状態を取得する
-//==========================================================
-const Keyboard_State* Keyboard_GetStateOld(void)
-{
-    return &gStateOld;
-}
-
-
-//==========================================================
-// Keyboard_Reset - キーボードの状態をリセットする
-//==========================================================
-void Keyboard_Reset(void)
-{
-    ZeroMemory(&gState, sizeof(Keyboard_State));
-    ZeroMemory(&gStateOld, sizeof(Keyboard_State));
-}
-
-
-//==========================================================
-// Keyboard_ProcessMessage - ウィンドウメッセージプロシージャフック関数
-//==========================================================
-void Keyboard_ProcessMessage(UINT message, WPARAM wParam, LPARAM lParam)
-{
+//==============================================================================
+// Windowsメッセージ処理
+//------------------------------------------------------------------------------
+// WndProcから以下のメッセージを転送する:
+// - WM_KEYDOWN / WM_KEYUP: 通常キー
+// - WM_SYSKEYDOWN / WM_SYSKEYUP: Alt+キーなどのシステムキー
+// - WM_ACTIVATEAPP: ウィンドウのアクティブ状態変化
+//==============================================================================
+void Keyboard::ProcessMessage(UINT message, WPARAM wParam, LPARAM lParam) {
     bool down = false;
 
-    switch (message)
-    {
+    switch (message) {
+        //--------------------------------------------------------------------------
+        // ウィンドウ非アクティブ時は全キーをリセット
+        // これにより、Alt+Tabでウィンドウを切り替えた後に
+        // キーが押しっぱなしになるのを防ぐ
+        //--------------------------------------------------------------------------
     case WM_ACTIVATEAPP:
-        Keyboard_Reset();
+        Reset();
         return;
 
     case WM_KEYDOWN:
@@ -187,34 +79,108 @@ void Keyboard_ProcessMessage(UINT message, WPARAM wParam, LPARAM lParam)
         return;
     }
 
-    int vk = (int)wParam;
-    switch (vk)
-    {
+    int vk = static_cast<int>(wParam);
+
+    //--------------------------------------------------------------------------
+    // 左右のShift/Ctrl/Altを区別する処理
+    // Windowsは標準ではVK_SHIFT, VK_CONTROL, VK_MENUしか送らないが、
+    // lParamのスキャンコードから左右を判別できる
+    //--------------------------------------------------------------------------
+    switch (vk) {
     case VK_SHIFT:
-        vk = (int)MapVirtualKey(((unsigned int)lParam & 0x00ff0000) >> 16u, MAPVK_VSC_TO_VK_EX);
-        if (!down)
-        {
-            // 左シフトと右シフトの両方が同時に押された場合にクリアされるようにするための回避策
-            keyUp(VK_LSHIFT);
-            keyUp(VK_RSHIFT);
+        // スキャンコードから左右を判別
+        vk = static_cast<int>(MapVirtualKey(
+            (static_cast<UINT>(lParam) & 0x00FF0000) >> 16,
+            MAPVK_VSC_TO_VK_EX
+        ));
+        if (!down) {
+            // 両方同時押しからの解放に対応
+            // 片方だけ離しても両方離れてしまう問題への回避策
+            SetKey(VK_LSHIFT, false);
+            SetKey(VK_RSHIFT, false);
         }
         break;
 
     case VK_CONTROL:
-        vk = ((UINT)lParam & 0x01000000) ? VK_RCONTROL : VK_LCONTROL;
+        // 拡張キーフラグで左右を判別
+        vk = (static_cast<UINT>(lParam) & 0x01000000) ? VK_RCONTROL : VK_LCONTROL;
         break;
 
     case VK_MENU:
-        vk = ((UINT)lParam & 0x01000000) ? VK_RMENU : VK_LMENU;
+        // 拡張キーフラグで左右を判別
+        vk = (static_cast<UINT>(lParam) & 0x01000000) ? VK_RMENU : VK_LMENU;
         break;
     }
 
-    if (down)
-    {
-        keyDown(vk);
+    SetKey(vk, down);
+}
+
+//==============================================================================
+// キーのビットを設定
+//------------------------------------------------------------------------------
+// 256個のキーをビットフィールドで管理
+// key >> 5 で配列インデックス（0〜7）を計算
+// key & 0x1F でビット位置（0〜31）を計算
+//==============================================================================
+void Keyboard::SetKey(int vk, bool down) {
+    // 有効範囲チェック（0x00〜0xFE）
+    if (vk < 0 || vk > 0xFE) return;
+
+    uint32_t bit = 1u << (vk & 0x1F);  // ビットマスク
+    int index = vk >> 5;               // 配列インデックス
+
+    if (down) {
+        m_currentState[index] |= bit;  // ビットを立てる
+    } else {
+        m_currentState[index] &= ~bit; // ビットを落とす
     }
-    else
-    {
-        keyUp(vk);
+}
+
+//==============================================================================
+// 指定キーのビットが立っているか
+//==============================================================================
+bool Keyboard::GetBit(const uint32_t* state, int key) const {
+    if (key < 0 || key > 0xFE) return false;
+
+    uint32_t bit = 1u << (key & 0x1F);
+    int index = key >> 5;
+
+    return (state[index] & bit) != 0;
+}
+
+//==============================================================================
+// キーが押されているか（Press判定）
+//==============================================================================
+bool Keyboard::IsPressed(Key key) const {
+    return GetBit(m_currentState, static_cast<int>(key));
+}
+
+//==============================================================================
+// キーが押された瞬間か（Trigger判定）
+//------------------------------------------------------------------------------
+// 現在押されていて、かつ前フレームでは押されていなかった
+//==============================================================================
+bool Keyboard::IsTrigger(Key key) const {
+    int k = static_cast<int>(key);
+    return GetBit(m_currentState, k) && !GetBit(m_previousState, k);
+}
+
+//==============================================================================
+// キーが離された瞬間か（Release判定）
+//------------------------------------------------------------------------------
+// 現在押されていなくて、かつ前フレームでは押されていた
+//==============================================================================
+bool Keyboard::IsRelease(Key key) const {
+    int k = static_cast<int>(key);
+    return !GetBit(m_currentState, k) && GetBit(m_previousState, k);
+}
+
+//==============================================================================
+// いずれかのキーが押されているか
+//==============================================================================
+bool Keyboard::IsAnyKeyPressed() const {
+    for (int i = 0; i < STATE_SIZE; ++i) {
+        if (m_currentState[i] != 0) return true;
     }
+    return false;
 }

@@ -134,9 +134,12 @@ int APIENTRY WinMain(HINSTANCE hInstance,
             // --- 60FPS固定更新 ---
             if (elapsed_time >= (1.0 / 60.0)) {
                 exec_last_time = current_time;
+
+                // エンジンシステム更新
+                Engine::System::GetInstance().Update();
+
                 Game::GameManager::Instance().Update();
                 Game::GameManager::Instance().Draw();
-                keycopy();
                 frame_count++;
             }
         }
@@ -161,8 +164,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     case WM_SYSKEYDOWN:
     case WM_KEYUP:
     case WM_SYSKEYUP:
-        Keyboard_ProcessMessage(uMsg, wParam, lParam);
-        Mouse_ProcessMessage(uMsg, wParam, lParam);
+        Keyboard::Instance().ProcessMessage(uMsg, wParam, lParam);
+        Mouse::Instance().ProcessMessage(uMsg, wParam, lParam);
         break;
 
         // --- キーボード入力 ---
@@ -170,7 +173,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
         if (wParam == VK_ESCAPE) {
             SendMessage(hWnd, WM_CLOSE, 0, 0);
         }
-        Keyboard_ProcessMessage(uMsg, wParam, lParam);
+        Keyboard::Instance().ProcessMessage(uMsg, wParam, lParam);
         break;
 
         // --- マウス入力 ---
@@ -186,7 +189,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     case WM_XBUTTONDOWN:
     case WM_XBUTTONUP:
     case WM_MOUSEHOVER:
-        Mouse_ProcessMessage(uMsg, wParam, lParam);
+        Mouse::Instance().ProcessMessage(uMsg, wParam, lParam);
         break;
 
         // --- ウィンドウ終了確認 ---

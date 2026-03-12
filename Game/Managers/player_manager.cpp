@@ -19,9 +19,7 @@
 #include "Engine/Core/renderer.h"
 #include "NetWork/network_manager.h"
 #include "NetWork/network_common.h"
-#include "Engine/Input/keyboard.h"
-#include "Engine/Input/mouse.h"
-#include "Engine/Input/game_controller.h"
+#include "Engine/Input/input_manager.h"
 #include <cmath>
 #include <algorithm>
 #include <memory>
@@ -74,7 +72,6 @@ void PlayerManager::Initialize(Map* map, ID3D11ShaderResourceView* texture) {
             Engine::GetDevice(), L"resource/texture/texture.jpg");
         if (!m_playerTexture) {
             // テクスチャのロードに失敗した場合はフォールバック
-            OutputDebugStringA("[PlayerManager] WARNING: Failed to load texture.jpg, using fallback texture\n");
             m_playerTexture = texture;
         }
     }
@@ -158,20 +155,11 @@ void PlayerManager::SetActivePlayer(int playerId) {
 // 入力処理
 //==========================================================
 void PlayerManager::HandleInput(float deltaTime) {
-    static bool was1Down = false;
-    static bool was2Down = false;
-
-    // --- プレイヤー切り替え（ロックされていなければ1/2キーで切り替え可能） ---
-    if (!initialPlayerLocked) {
-        if (Keyboard_IsKeyDown(KK_D1) && !was1Down) SetActivePlayer(1);
-        if (Keyboard_IsKeyDown(KK_D2) && !was2Down) SetActivePlayer(2);
-    }
-
-    was1Down = Keyboard_IsKeyDown(KK_D1);
-    was2Down = Keyboard_IsKeyDown(KK_D2);
-
     Player* activePlayer = GetActivePlayer();
     if (!activePlayer) return;
+
+    // InputManagerからコマンドを取得
+    const InputCommand& cmd = InputManager::Cmd();
 
     // --- 移動入力 ---
     XMFLOAT3 moveDirection = { 0.0f, 0.0f, 0.0f };
@@ -180,27 +168,21 @@ void PlayerManager::HandleInput(float deltaTime) {
     XMFLOAT3 forward = { sinf(yawRad), 0.0f, cosf(yawRad) };
     XMFLOAT3 right = { cosf(yawRad), 0.0f, -sinf(yawRad) };
 
-    // キーボード入力
-    if (Keyboard_IsKeyDown(KK_W)) { moveDirection.x += forward.x; moveDirection.z += forward.z; }
-    if (Keyboard_IsKeyDown(KK_S)) { moveDirection.x -= forward.x; moveDirection.z -= forward.z; }
-    if (Keyboard_IsKeyDown(KK_A)) { moveDirection.x -= right.x;   moveDirection.z -= right.z; }
-    if (Keyboard_IsKeyDown(KK_D)) { moveDirection.x += right.x;   moveDirection.z += right.z; }
+    // InputManagerの抽象化された入力を使用
+    // アナログ入力（ゲームパッドスティック or キーボードのデジタル値）
+    float analogX = cmd.moveAnalogX;  // 左右: -1.0 ~ 1.0
+    float analogY = cmd.moveAnalogY;  // 前後: -1.0 ~ 1.0 (負が前進)
 
-    // ゲームパッド左スティック入力
-    GamepadState padState;
-    if (GameController::GetState(padState)) {
-        float lx = padState.leftStickX;
-        float ly = padState.leftStickY;
-        const float deadzone = 0.2f;
-        if (fabsf(lx) > deadzone || fabsf(ly) > deadzone) {
-            moveDirection.x += -forward.x * ly + right.x * lx;
-            moveDirection.z += -forward.z * ly + right.z * lx;
-        }
-    }
+    // アナログ値を移動方向に変換
+    // moveAnalogY: 負=前進(W)、正=後退(S)
+    // moveAnalogX: 負=左(A)、正=右(D)
+    moveDirection.x = -forward.x * analogY + right.x * analogX;
+    moveDirection.z = -forward.z * analogY + right.z * analogX;
 
     // 移動方向を正規化
     float moveLength = sqrtf(moveDirection.x * moveDirection.x + moveDirection.z * moveDirection.z);
-    if (moveLength > 0.0f) {
+    if (moveLength > 1.0f) {
+        // 斜め移動時に速度が上がらないよう正規化（ただし1.0以下の場合はアナログ値を維持）
         moveDirection.x /= moveLength;
         moveDirection.z /= moveLength;
     }
@@ -208,20 +190,12 @@ void PlayerManager::HandleInput(float deltaTime) {
     activePlayer->Move(moveDirection, deltaTime);
 
     // --- ジャンプ ---
-    if (Keyboard_IsKeyDown(KK_SPACE)) {
+    if (cmd.jumpTrigger) {
         activePlayer->Jump();
     }
 
-    // --- 射撃（左クリック or ENTERキー） ---
-    Mouse_State mouseState;
-    Mouse_GetState(&mouseState);
-    static bool wasLButtonDown = false;
-    bool lClickTrigger = (mouseState.leftButton && !wasLButtonDown);
-    wasLButtonDown = mouseState.leftButton;
-
-    bool shootTrigger = Keyboard_IsKeyDownTrigger(KK_ENTER) || lClickTrigger;
-
-    if (activePlayer->IsAlive() && shootTrigger) {
+    // --- 射撃（attackTrigger: 押した瞬間のみtrue） ---
+    if (activePlayer->IsAlive() && cmd.attackTrigger) {
         // カメラの向きから発射方向を計算（pitch込みで上下にも飛ぶ）
         CameraManager& cam = CameraManager::GetInstance();
         float shootYaw = XMConvertToRadians(cam.GetRotation());
@@ -258,7 +232,7 @@ void PlayerManager::HandleInput(float deltaTime) {
     }
 
     // --- リスポーン ---
-    if (Keyboard_IsKeyDownTrigger(KK_R)) {
+    if (cmd.reloadTrigger) {
         activePlayer->Respawn({ 0.0f, 3.0f, 0.0f });
 
         // リスポーン位置を即座にGameObjectにも反映
@@ -309,11 +283,9 @@ void PlayerManager::ForceUpdatePlayer(int playerId, const XMFLOAT3& pos, const X
     if (alive && !currentlyAlive) {
         // 死亡→生存: リスポーン
         p->Respawn(pos);
-        OutputDebugStringA("[ForceUpdatePlayer] Player respawned via network\n");
     } else if (!alive && currentlyAlive) {
         // 生存→死亡: 強制死亡
         p->ForceDeath();
-        OutputDebugStringA("[ForceUpdatePlayer] Player died via network\n");
     }
 
     // 生存中のみ位置を更新
