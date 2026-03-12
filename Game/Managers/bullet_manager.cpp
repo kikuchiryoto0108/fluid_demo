@@ -11,9 +11,30 @@
 #include "bullet_manager.h"
 #include "Game/Managers/player_manager.h"
 #include "Game/Objects/player.h"
-#include <iostream>
+#include "Game/Objects/destructible_wall.h"
 
 namespace Game {
+
+    // Update関数内で壁との衝突をチェック
+    void BulletManager::Update(float deltaTime) {
+        // 弾の更新（1回だけ）
+        for (auto& b : m_bullets) {
+            if (!b || !b->active) continue;
+            b->Update(deltaTime);
+        }
+
+        // 破壊可能な壁との衝突判定
+        CheckBulletWallHits();
+
+        // プレイヤーとの衝突判定
+        CheckBulletPlayerHits();
+
+        // 非アクティブな弾を削除
+        m_bullets.erase(
+            std::remove_if(m_bullets.begin(), m_bullets.end(),
+                [](const std::unique_ptr<Bullet>& b) { return !b || !b->active; }),
+            m_bullets.end());
+    }
 
 //==========================================================
 // 弾丸とプレイヤーの衝突チェック
@@ -37,15 +58,30 @@ void BulletManager::CheckBulletPlayerHits() {
             if (b->collider.Intersects(playerCol)) {
                 b->Deactivate();
                 player->TakeDamage(1);
-
-                std::cout << "[BulletManager Hit!] Player " << player->GetPlayerId()
-                    << " HP=" << player->GetHP() << "/" << player->GetMaxHP() << "\n";
-
-                if (!player->IsAlive()) {
-                    std::cout << "[BulletManager Kill!] Player " << player->GetPlayerId()
-                        << " eliminated!\n";
-                }
                 break;  // この弾は消えたので次の弾へ
+            }
+        }
+    }
+}
+//==========================================================
+// 弾丸と破壊可能な壁の衝突チェック
+//==========================================================
+void BulletManager::CheckBulletWallHits() {
+    for (auto& b : m_bullets) {
+        if (!b || !b->active) continue;
+
+        for (auto* wall : m_walls) {
+            if (!wall) continue;
+
+            XMFLOAT3 hitPoint;
+            // 弾の半径は0.2f（bullet.cppのコライダーサイズ）
+            if (wall->CheckBulletHit(b->position, 0.2f, hitPoint)) {
+                // 衝突点を中心に半径10で破壊
+                int broken = wall->BreakAtPoint(hitPoint, 10.0f);
+
+                // 弾を消す
+                b->Deactivate();
+                break;
             }
         }
     }

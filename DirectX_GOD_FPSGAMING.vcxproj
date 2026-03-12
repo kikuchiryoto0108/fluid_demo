@@ -20,6 +20,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="external\DirectXTex.h" />
+    <ClInclude Include="Game\Objects\destructible_wall.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="main.h" />
     <ClInclude Include="Engine\Core\renderer.h" />
@@ -63,6 +64,7 @@
     <ClInclude Include="external\WICTextureLoader11.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="Game\Objects\destructible_wall.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Create</PrecompiledHeader>

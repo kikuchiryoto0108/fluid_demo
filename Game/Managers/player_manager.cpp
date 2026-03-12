@@ -78,7 +78,7 @@ void PlayerManager::Initialize(Map* map, ID3D11ShaderResourceView* texture) {
 
     // --- 常に両方のプレイヤーを初期化する ---
     if (!player1Initialized) {
-        player1.Initialize(map, m_playerTexture, 1, ViewMode::THIRD_PERSON);
+        player1.Initialize(map, m_playerTexture, 1, ViewMode::FIRST_PERSON);
         player1.SetPosition(XMFLOAT3(0.0f, 3.0f, 0.0f));
         player1Initialized = true;
     }

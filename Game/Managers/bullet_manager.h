@@ -16,6 +16,7 @@
 namespace Game {
 
     class Player;
+    class DestructibleWall;
 
 //==========================================================
 // 弾丸マネージャークラス（シングルトン）
@@ -25,6 +26,8 @@ private:
     std::vector<std::unique_ptr<Bullet>> m_bullets;
 
     BulletManager() = default;
+
+    std::vector<DestructibleWall*> m_walls;  // 破壊可能な壁への参照
 
 public:
     // --- シングルトンアクセス ---
@@ -39,21 +42,7 @@ public:
     }
 
     // --- 更新処理 ---
-    void Update(float deltaTime) {
-        for (auto& b : m_bullets) {
-            b->Update(deltaTime);
-        }
-
-        // CollisionSystemのコールバックが動かない場合のフォールバック
-        // 弾のcolliderとPlayerのcolliderを直接チェック
-        CheckBulletPlayerHits();
-
-        // 非アクティブな弾を削除
-        m_bullets.erase(
-            std::remove_if(m_bullets.begin(), m_bullets.end(),
-                [](const std::unique_ptr<Bullet>& b) { return !b->active; }),
-            m_bullets.end());
-    }
+    void Update(float deltaTime);
 
     // --- 描画処理 ---
     void Draw() {
@@ -74,9 +63,23 @@ public:
     BulletManager(const BulletManager&) = delete;
     BulletManager& operator=(const BulletManager&) = delete;
 
+    // 破壊可能な壁の登録
+    void RegisterWall(DestructibleWall* wall) {
+        if (wall) {
+            m_walls.push_back(wall);
+        }
+    }
+
+    // 壁の登録解除
+    void ClearWalls() {
+        m_walls.clear();
+    }
+
 private:
     // --- 弾丸とプレイヤーの衝突チェック ---
     void CheckBulletPlayerHits();
+
+    void CheckBulletWallHits();
 };
 
 } // namespace Game
