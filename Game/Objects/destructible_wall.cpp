@@ -23,8 +23,11 @@ namespace Game {
 
     //==========================================================
     // コンストラクタ
+    // GameObjectの基底クラスを初期化
     //==========================================================
-    DestructibleWall::DestructibleWall() {
+    DestructibleWall::DestructibleWall() : GameObject() {
+        // タグを設定（マップブロックとして扱う）
+        SetTag(ObjectTag::MAP_BLOCK);
     }
 
     //==========================================================
@@ -95,7 +98,64 @@ namespace Game {
         }
 
         DebugLog("[DestructibleWall] SUCCESS: %d fragments ready\n", (int)m_fragments.size());
+
+        // 全体のバウンディングボックスからBoxColliderを設定
+        UpdateOverallCollider();
+
         return true;
+    }
+
+    //==========================================================
+    // 全体のバウンディングボックスを計算してコライダーを更新
+    // 全破片を包含するボックスコライダーを作成
+    //==========================================================
+    void DestructibleWall::UpdateOverallCollider() {
+        if (m_fragments.empty()) return;
+
+        // 全破片の境界を計算
+        XMFLOAT3 overallMin = { FLT_MAX, FLT_MAX, FLT_MAX };
+        XMFLOAT3 overallMax = { -FLT_MAX, -FLT_MAX, -FLT_MAX };
+
+        for (const auto& frag : m_fragments) {
+            // FROZENの破片のみを考慮
+            if (frag.state != FragmentState::FROZEN) continue;
+
+            // ワールド座標での破片の境界を計算
+            XMFLOAT3 fragWorldPos = {
+                frag.initialPosition.x + position.x,
+                frag.initialPosition.y + position.y,
+                frag.initialPosition.z + position.z
+            };
+
+            XMFLOAT3 halfSize = {
+                (frag.boundsMax.x - frag.boundsMin.x) * 0.5f,
+                (frag.boundsMax.y - frag.boundsMin.y) * 0.5f,
+                (frag.boundsMax.z - frag.boundsMin.z) * 0.5f
+            };
+
+            // 最小・最大点を更新
+            overallMin.x = (std::min)(overallMin.x, fragWorldPos.x - halfSize.x);
+            overallMin.y = (std::min)(overallMin.y, fragWorldPos.y - halfSize.y);
+            overallMin.z = (std::min)(overallMin.z, fragWorldPos.z - halfSize.z);
+            overallMax.x = (std::max)(overallMax.x, fragWorldPos.x + halfSize.x);
+            overallMax.y = (std::max)(overallMax.y, fragWorldPos.y + halfSize.y);
+            overallMax.z = (std::max)(overallMax.z, fragWorldPos.z + halfSize.z);
+        }
+
+        // 有効な境界があればコライダーを設定
+        if (overallMin.x < overallMax.x) {
+            XMFLOAT3 colliderSize = {
+                overallMax.x - overallMin.x,
+                overallMax.y - overallMin.y,
+                overallMax.z - overallMin.z
+            };
+
+            // BoxColliderを設定（GameObjectの機能を使用）
+            setBoxCollider(colliderSize);
+
+            DebugLog("[DestructibleWall] Overall collider: size=(%.2f,%.2f,%.2f)\n",
+                colliderSize.x, colliderSize.y, colliderSize.z);
+        }
     }
 
     //==========================================================
@@ -114,14 +174,17 @@ namespace Game {
 
     //==========================================================
     // 位置設定
+    // GameObjectのpositionを使用して壁全体の位置を設定
     //==========================================================
-    void DestructibleWall::SetPosition(const XMFLOAT3& pos) {
+    void DestructibleWall::SetWallPosition(const XMFLOAT3& pos) {
         XMFLOAT3 delta = {
-            pos.x - m_position.x,
-            pos.y - m_position.y,
-            pos.z - m_position.z
+            pos.x - position.x,
+            pos.y - position.y,
+            pos.z - position.z
         };
-        m_position = pos;
+        
+        // GameObjectの位置を更新
+        setPosition(pos);
 
         // 全破片の位置を更新
         for (auto& frag : m_fragments) {
@@ -133,24 +196,32 @@ namespace Game {
             frag.initialPosition.z += delta.z;
             frag.collider.SetCenter(frag.position);
         }
+
+        // コライダーを更新
+        UpdateOverallCollider();
     }
 
     //==========================================================
     // 回転設定
+    // GameObjectのrotationを使用
     //==========================================================
-    void DestructibleWall::SetRotation(const XMFLOAT3& rot) {
-        m_rotation = rot;
+    void DestructibleWall::SetWallRotation(const XMFLOAT3& rot) {
+        setRotation(rot);
         // 必要に応じて破片の位置を回転
     }
 
     //==========================================================
     // スケール設定
+    // GameObjectのscaleを使用して壁全体のスケールを設定
     //==========================================================
-    void DestructibleWall::SetScale(const XMFLOAT3& scale) {
-        m_scale = scale;
+    void DestructibleWall::SetWallScale(const XMFLOAT3& scl) {
+        scale = scl;
         for (auto& frag : m_fragments) {
-            frag.scale = scale;
+            frag.scale = scl;
         }
+        
+        // コライダーを更新
+        UpdateOverallCollider();
     }
 
     //==========================================================
@@ -216,9 +287,10 @@ namespace Game {
     }
 
     //==========================================================
-    // 描画
+    // 描画（GameObjectのdraw()をオーバーライド）
+    // 各破片を個別に描画
     //==========================================================
-    void DestructibleWall::Draw() {
+    void DestructibleWall::draw() {
         auto* ctx = Engine::Renderer::GetInstance().GetContext();
         if (!ctx) return;
 
@@ -238,10 +310,10 @@ namespace Game {
             // FROZENの場合は初期位置のまま描画
             XMFLOAT3 drawPos = frag.position;
             if (frag.state == FragmentState::FROZEN) {
-                // 壁全体のトランスフォームを適用
-                drawPos.x = frag.initialPosition.x + m_position.x;
-                drawPos.y = frag.initialPosition.y + m_position.y;
-                drawPos.z = frag.initialPosition.z + m_position.z;
+                // 壁全体のトランスフォームを適用（GameObjectのpositionを使用）
+                drawPos.x = frag.initialPosition.x + position.x;
+                drawPos.y = frag.initialPosition.y + position.y;
+                drawPos.z = frag.initialPosition.z + position.z;
             }
 
             // メッシュの中心からオフセット（メッシュは原点基準）
@@ -285,11 +357,11 @@ namespace Game {
         for (auto& frag : m_fragments) {
             if (frag.state != FragmentState::FROZEN) continue;
 
-            // ワールド座標での破片位置
+            // ワールド座標での破片位置（GameObjectのpositionを使用）
             XMFLOAT3 fragWorldPos = {
-                frag.initialPosition.x + m_position.x,
-                frag.initialPosition.y + m_position.y,
-                frag.initialPosition.z + m_position.z
+                frag.initialPosition.x + position.x,
+                frag.initialPosition.y + position.y,
+                frag.initialPosition.z + position.z
             };
 
             float distSq = DistanceSquared(fragWorldPos, hitPoint);
@@ -333,6 +405,11 @@ namespace Game {
             }
         }
 
+        // 破壊後にコライダーを更新
+        if (brokenCount > 0) {
+            UpdateOverallCollider();
+        }
+
         DebugLog("[DestructibleWall::BreakAtPoint] %d fragments broken\n", brokenCount);
         return brokenCount;
     }
@@ -347,11 +424,11 @@ namespace Game {
         for (const auto& frag : m_fragments) {
             if (frag.state != FragmentState::FROZEN) continue;
 
-            // ワールド座標での破片位置
+            // ワールド座標での破片位置（GameObjectのpositionを使用）
             XMFLOAT3 fragWorldPos = {
-                frag.initialPosition.x + m_position.x,
-                frag.initialPosition.y + m_position.y,
-                frag.initialPosition.z + m_position.z
+                frag.initialPosition.x + position.x,
+                frag.initialPosition.y + position.y,
+                frag.initialPosition.z + position.z
             };
 
             // コライダーの位置を更新して衝突判定
@@ -431,12 +508,13 @@ namespace Game {
 
     //==========================================================
     // ローカル座標をワールド座標に変換
+    // GameObjectのscale、positionを使用
     //==========================================================
     XMFLOAT3 DestructibleWall::TransformPoint(const XMFLOAT3& local) const {
         return {
-            local.x * m_scale.x + m_position.x,
-            local.y * m_scale.y + m_position.y,
-            local.z * m_scale.z + m_position.z
+            local.x * scale.x + position.x,
+            local.y * scale.y + position.y,
+            local.z * scale.z + position.z
         };
     }
 

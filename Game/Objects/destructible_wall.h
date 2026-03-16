@@ -16,6 +16,7 @@
 #include "Engine/Graphics/mesh.h"
 #include "Engine/Graphics/model_data.h"
 #include "Engine/Collision/box_collider.h"
+#include "Game/Objects/game_object.h"
 
 namespace Game {
 
@@ -65,23 +66,24 @@ namespace Game {
 
     //==========================================================
     // 破壊可能な壁クラス
+    // GameObjectを継承し、BoxColliderによるコリジョン判定を持つ
     //==========================================================
-    class DestructibleWall {
+    class DestructibleWall : public GameObject {
     public:
         DestructibleWall();
-        ~DestructibleWall();
+        ~DestructibleWall() override;
 
         // --- ファイルから読み込み ---
         bool LoadFromFile(const std::string& filepath, ID3D11Device* pDevice);
 
-        // --- 位置・スケール設定 ---
-        void SetPosition(const XMFLOAT3& pos);
-        void SetRotation(const XMFLOAT3& rot);
-        void SetScale(const XMFLOAT3& scale);
+        // --- 位置・スケール設定（GameObjectの機能を拡張） ---
+        void SetWallPosition(const XMFLOAT3& pos);
+        void SetWallRotation(const XMFLOAT3& rot);
+        void SetWallScale(const XMFLOAT3& scl);
 
-        // --- 更新・描画 ---
-        void Update(float deltaTime);
-        void Draw();
+        // --- 更新・描画（GameObjectのオーバーライド） ---
+        void Update(float deltaTime) override;
+        void draw() override;
 
         // --- 破壊 ---
         // hitPointを中心にradius内の破片を落下させる
@@ -103,8 +105,11 @@ namespace Game {
 
         void SetGroundY(float y) { m_groundY = y; }
 
+        // --- 全体のバウンディングボックスを計算してコライダーを更新 ---
+        void UpdateOverallCollider();
+
     private:
-        float m_groundY = 0.0f;  // GROUND_Yの代わり
+        float m_groundY = 0.0f;  // 地面のY座標
 
         void UpdateFragment(WallFragment& frag, float deltaTime);
         void CalculateFragmentBounds(WallFragment& frag);
@@ -114,11 +119,6 @@ namespace Game {
     private:
         std::vector<WallFragment> m_fragments;
         Engine::ModelData m_modelData;
-
-        // 壁全体のトランスフォーム
-        XMFLOAT3 m_position = { 0, 0, 0 };
-        XMFLOAT3 m_rotation = { 0, 0, 0 };
-        XMFLOAT3 m_scale = { 1, 1, 1 };
 
         // 物理定数
         static constexpr float GRAVITY = -15.0f;

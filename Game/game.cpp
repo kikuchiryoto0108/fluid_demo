@@ -114,7 +114,7 @@ HRESULT SceneGame::Initialize() {
                 player = static_cast<Player*>(hit.dataA->userData);
             if (Engine::HasFlag(hit.dataB->layer, Engine::CollisionLayer::PLAYER))
                 player = static_cast<Player*>(hit.dataB->userData);
-            if (bullet && player && bullet->active && player->IsAlive()) {
+            if (bullet && player && bullet->IsActive() && player->IsAlive()) {
                 if (bullet->ownerPlayerId == player->GetPlayerId()) return;
                 bullet->Deactivate();
                 player->TakeDamage(1);
@@ -129,11 +129,12 @@ HRESULT SceneGame::Initialize() {
 
     // =========================================
     // 破壊可能な壁の初期化
+    // GameObjectとしてBoxColliderを持つ破壊可能な壁を生成
     // =========================================
     if (m_destructibleWall.LoadFromFile("resource/model/break_block.fbx", Engine::GetDevice())) {
         // 壁の位置を設定（マップに合わせて調整）
-        m_destructibleWall.SetPosition({ 0.0f, -10.0f, 0.0f });
-        m_destructibleWall.SetScale({ 1.0f, 1.0f, 1.0f });
+        m_destructibleWall.SetWallPosition({ 0.0f, -10.0f, 0.0f });
+        m_destructibleWall.SetWallScale({ 1.0f, 1.0f, 1.0f });
         m_destructibleWall.SetGroundY(-23.0f);  // 地面の高さを設定
 
         // BulletManagerに壁を登録
@@ -259,8 +260,9 @@ void SceneGame::Draw() {
 
     // =========================================
     // 破壊可能な壁の描画
+    // GameObjectのdraw()メソッドを呼び出し
     // =========================================
-    m_destructibleWall.Draw();
+    m_destructibleWall.draw();
 
     DrawPlayers();
 
