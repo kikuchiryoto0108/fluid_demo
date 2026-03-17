@@ -213,9 +213,6 @@
     <ClInclude Include="external\DirectXTex.h">
       <Filter>ヘッダー ファイル\external</Filter>
     </ClInclude>
-    <ClInclude Include="Game\Objects\destructible_wall.h">
-      <Filter>ヘッダー ファイル\Game\Objects</Filter>
-    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp">
@@ -322,9 +319,6 @@
     </ClCompile>
     <ClCompile Include="external\WICTextureLoader11.cpp">
       <Filter>ソース ファイル\external</Filter>
-    </ClCompile>
-    <ClCompile Include="Game\Objects\destructible_wall.cpp">
-      <Filter>ソース ファイル\Game\Objects</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

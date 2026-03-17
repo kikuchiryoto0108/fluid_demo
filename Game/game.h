@@ -10,7 +10,6 @@
 #pragma once
 
 #include "main.h"
-#include "Game/Objects/destructible_wall.h" 
 #include <vector>
 #include <memory>
 
@@ -72,15 +71,10 @@ public:
     std::vector<std::shared_ptr<GameObject>>& GetWorldObjects() { return m_worldObjects; }
     const std::vector<std::shared_ptr<GameObject>>& GetWorldObjects() const { return m_worldObjects; }
 
-    // 破壊可能な壁へのアクセス
-    DestructibleWall* GetDestructibleWall() { return &m_destructibleWall; }
 private:
     Map* m_pMap = nullptr;                  // マップデータ
     MapRenderer* m_pMapRenderer = nullptr;  // マップ描画システム
     std::vector<std::shared_ptr<GameObject>> m_worldObjects;    // ワールドオブジェクト
-
-    // 破壊可能な壁
-    DestructibleWall m_destructibleWall;
 
     // --- HP表示UIの描画（画面左上にHPバー＋テキスト） ---
     void DrawHPDisplay();

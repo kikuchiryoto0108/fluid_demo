@@ -11,7 +11,6 @@
 #include "bullet_manager.h"
 #include "Game/Managers/player_manager.h"
 #include "Game/Objects/player.h"
-#include "Game/Objects/destructible_wall.h"
 
 namespace Game {
 
@@ -22,9 +21,6 @@ namespace Game {
             if (!b || !b->IsActive()) continue;
             b->Update(deltaTime);
         }
-
-        // 破壊可能な壁との衝突判定
-        CheckBulletWallHits();
 
         // プレイヤーとの衝突判定
         CheckBulletPlayerHits();
@@ -63,28 +59,4 @@ void BulletManager::CheckBulletPlayerHits() {
         }
     }
 }
-//==========================================================
-// 弾丸と破壊可能な壁の衝突チェック
-//==========================================================
-void BulletManager::CheckBulletWallHits() {
-    for (auto& b : m_bullets) {
-        if (!b || !b->IsActive()) continue;
-
-        for (auto* wall : m_walls) {
-            if (!wall) continue;
-
-            XMFLOAT3 hitPoint;
-            // 弾の半径は0.2f（bullet.cppのコライダーサイズ）
-            if (wall->CheckBulletHit(b->GetPosition(), 0.2f, hitPoint)) {
-                // 衝突点を中心に半径10で破壊
-                int broken = wall->BreakAtPoint(hitPoint, 10.0f);
-
-                // 弾を消す
-                b->Deactivate();
-                break;
-            }
-        }
-    }
-}
-
 } // namespace Game

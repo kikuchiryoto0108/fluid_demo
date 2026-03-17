@@ -78,8 +78,6 @@ public:
 private:
     // --- 弾丸とプレイヤーの衝突チェック ---
     void CheckBulletPlayerHits();
-
-    void CheckBulletWallHits();
 };
 
 } // namespace Game
