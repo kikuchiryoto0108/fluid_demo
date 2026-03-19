@@ -89,22 +89,27 @@ namespace Game {
             } else {
                 OutputDebugStringA("SPHFluid: 初期化成功！\n");
 
-                // 境界設定（床を-22に）
+                // 境界設定
                 m_fluid->SetBoundary(
-                    DirectX::XMFLOAT3(-10.0f, -22.0f, -10.0f),
-                    DirectX::XMFLOAT3(10.0f, 15.0f, 10.0f)
+                    DirectX::XMFLOAT3(-3.0f, -22.9f, -3.0f),
+                    DirectX::XMFLOAT3(3.0f, 0.0f, 3.0f)
                 );
 
-                // 粒子サイズ
-                m_fluid->SetParticleScale(0.15f);
+                // 色設定（少し明るめ）
+                m_fluid->SetParticleColor(DirectX::XMFLOAT4(0.15f, 0.45f, 0.85f, 0.65f));
+
+                // 粒子サイズ（少し大きめ）
+                m_fluid->SetParticleScale(0.2f);
+
+                // スクリーンスペース有効化
+                m_fluid->SetScreenSpaceEnabled(true);
 
                 // 初期パーティクル生成
                 m_fluid->SpawnParticles(
-                    DirectX::XMFLOAT3(0.0f, 0.0f, 0.0f),
-                    300,
-                    2.0f
+                    DirectX::XMFLOAT3(0.0f, -5.0f, 0.0f),
+                    120,
+                    1.5f
                 );
-                //m_fluid->SetScreenSpaceEnabled(false);
             }
         }
 

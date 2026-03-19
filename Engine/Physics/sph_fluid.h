@@ -8,6 +8,7 @@
 #include <wrl/client.h>
 #include <vector>
 #include <memory>
+#include <algorithm>
 #include "sph_particle.h"
 #include "Engine/Graphics/render_target.h"
 #include "Engine/Graphics/fullscreen_quad.h"
@@ -32,12 +33,13 @@ namespace Engine {
         void SetBoundary(const XMFLOAT3& min, const XMFLOAT3& max);
         void SetGravity(const XMFLOAT3& gravity);
         void SetParticleScale(float scale) { m_particleScale = scale; }
+        void SetParticleColor(const XMFLOAT4& color) { m_particleColor = color; }
 
         uint32_t GetParticleCount() const { return m_particleCount; }
         uint32_t GetMaxParticles() const { return m_maxParticles; }
 
-        // スクリーンスペース流体を有効/無効
         void SetScreenSpaceEnabled(bool enabled) { m_screenSpaceEnabled = enabled; }
+        bool IsScreenSpaceEnabled() const { return m_screenSpaceEnabled; }
 
     private:
         // シミュレーション
@@ -52,11 +54,12 @@ namespace Engine {
         void HandleBoundaries();
 
         // 描画
-        void DrawParticles(ID3D11DeviceContext* context);       // 通常描画
-        void DrawScreenSpace(ID3D11DeviceContext* context);     // スクリーンスペース
+        void DrawParticles(ID3D11DeviceContext* context);
+        void DrawScreenSpace(ID3D11DeviceContext* context);
 
-        // シェーダー初期化
+        // 初期化
         bool InitializeShaders(ID3D11Device* device);
+        bool CreateBlendStates(ID3D11Device* device);
 
     private:
         std::vector<SPHParticle> m_particles;
@@ -65,15 +68,19 @@ namespace Engine {
         uint32_t m_maxParticles = 0;
 
         SPHParams m_params;
-        float m_particleScale = 0.1f;
+        float m_particleScale = 0.15f;
+        XMFLOAT4 m_particleColor = { 0.1f, 0.4f, 0.8f, 0.7f };
 
         std::shared_ptr<Mesh> m_sphereMesh;
 
         ID3D11Device* m_pDevice = nullptr;
         bool m_initialized = false;
 
+        // ブレンドステート
+        ComPtr<ID3D11BlendState> m_pAlphaBlendState;
+
         // スクリーンスペース流体用
-        bool m_screenSpaceEnabled = true;
+        bool m_screenSpaceEnabled = false;  // デフォルトはOFF
         std::unique_ptr<RenderTarget> m_depthRT;
         std::unique_ptr<RenderTarget> m_blurRT1;
         std::unique_ptr<RenderTarget> m_blurRT2;
