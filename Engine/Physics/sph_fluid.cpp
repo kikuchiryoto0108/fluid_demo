@@ -14,7 +14,9 @@
 #include <cmath>
 #include <cstdlib>
 #include <ctime>
-
+#include "Engine/Collision/map_collision.h"
+#include "Game/Managers/player_manager.h"
+#include "Game/Objects/player.h"
 #pragma comment(lib, "d3dcompiler.lib")
 
 namespace Engine {
@@ -35,6 +37,12 @@ namespace Engine {
         XMFLOAT2 TexelSize;
         float BlurScale;
         float BlurDepthFalloff;
+    };
+
+    struct CBMetaball {
+        XMFLOAT2 TexelSize;
+        float Threshold;
+        float Smoothness;
     };
 
     struct CBFinal {
@@ -75,6 +83,7 @@ namespace Engine {
     // ブレンドステート作成
     //==========================================================
     bool SPHFluid::CreateBlendStates(ID3D11Device* device) {
+        // 既存のアルファブレンド
         D3D11_BLEND_DESC blendDesc = {};
         blendDesc.AlphaToCoverageEnable = FALSE;
         blendDesc.IndependentBlendEnable = FALSE;
@@ -89,9 +98,29 @@ namespace Engine {
 
         HRESULT hr = device->CreateBlendState(&blendDesc, m_pAlphaBlendState.GetAddressOf());
         if (FAILED(hr)) {
-            OutputDebugStringA("SPHFluid: ブレンドステート作成失敗\n");
+            OutputDebugStringA("SPHFluid: アルファブレンドステート作成失敗\n");
             return false;
         }
+
+        // 加算ブレンド（厚み用）
+        D3D11_BLEND_DESC additiveDesc = {};
+        additiveDesc.AlphaToCoverageEnable = FALSE;
+        additiveDesc.IndependentBlendEnable = FALSE;
+        additiveDesc.RenderTarget[0].BlendEnable = TRUE;
+        additiveDesc.RenderTarget[0].SrcBlend = D3D11_BLEND_ONE;
+        additiveDesc.RenderTarget[0].DestBlend = D3D11_BLEND_ONE;  // 加算
+        additiveDesc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
+        additiveDesc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
+        additiveDesc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ONE;
+        additiveDesc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
+        additiveDesc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+
+        hr = device->CreateBlendState(&additiveDesc, m_pAdditiveBlendState.GetAddressOf());
+        if (FAILED(hr)) {
+            OutputDebugStringA("SPHFluid: 加算ブレンドステート作成失敗\n");
+            return false;
+        }
+
         return true;
     }
 
@@ -103,17 +132,11 @@ namespace Engine {
         ComPtr<ID3DBlob> vsBlob, psBlob, errorBlob;
 
         //----------------------------------------------------------
-        // 深度シェーダー（シンプル版 - 球メッシュ用）
+        // 深度シェーダー（メタボール風）
         //----------------------------------------------------------
         const char* depthShader = R"(
     cbuffer CBMatrix : register(b0) {
         float4x4 WorldViewProjection;
-    };
-    cbuffer CBFluid : register(b2) {
-        float4x4 View;
-        float4x4 Projection;
-        float PointRadius;
-        float3 Padding;
     };
     struct VS_INPUT {
         float3 Position : POSITION;
@@ -124,19 +147,22 @@ namespace Engine {
     struct VS_OUTPUT {
         float4 Position : SV_Position;
         float Depth     : TEXCOORD0;
+        float3 ViewPos  : TEXCOORD1;
     };
     VS_OUTPUT VS_Depth(VS_INPUT input) {
         VS_OUTPUT output;
         output.Position = mul(float4(input.Position, 1.0), WorldViewProjection);
-        // NDC深度をそのまま使う
         output.Depth = output.Position.z / output.Position.w;
+        output.ViewPos = input.Position;
         return output;
     }
     float4 PS_Depth(VS_OUTPUT input) : SV_Target {
-        // 0〜1の深度値を出力
-        return float4(input.Depth, input.Depth, input.Depth, 1.0);
+        // 深度を出力（メタボール用に少し膨らませる）
+        float depth = input.Depth;
+        return float4(depth, depth, depth, 1.0);
     }
 )";
+
 
         hr = D3DCompile(depthShader, strlen(depthShader), nullptr, nullptr, nullptr,
             "VS_Depth", "vs_4_0", 0, 0, &vsBlob, &errorBlob);
@@ -153,6 +179,122 @@ namespace Engine {
             return false;
         }
         device->CreatePixelShader(psBlob->GetBufferPointer(), psBlob->GetBufferSize(), nullptr, &m_pDepthPS);
+
+        //----------------------------------------------------------
+// メタボール合成シェーダー（深度を滑らかに繋げる）
+//----------------------------------------------------------
+        const char* metaballShader = R"(
+    Texture2D DepthTexture : register(t0);
+    SamplerState LinearSampler : register(s0);
+    
+    cbuffer CBMetaball : register(b0) {
+        float2 TexelSize;
+        float Threshold;
+        float Smoothness;
+    };
+    
+    struct VS_OUTPUT {
+        float4 Position : SV_Position;
+        float2 TexCoord : TEXCOORD;
+    };
+    
+    VS_OUTPUT VS_Metaball(float3 pos : POSITION, float2 uv : TEXCOORD) {
+        VS_OUTPUT output;
+        output.Position = float4(pos, 1.0);
+        output.TexCoord = uv;
+        return output;
+    }
+    
+    float4 PS_Metaball(VS_OUTPUT input) : SV_Target {
+        float centerDepth = DepthTexture.Sample(LinearSampler, input.TexCoord).r;
+        
+        if (centerDepth <= 0.001 || centerDepth >= 0.999) {
+            return float4(0, 0, 0, 0);
+        }
+        
+        // 周囲のサンプルを集めて滑らかに繋げる
+        float totalWeight = 1.0;
+        float totalDepth = centerDepth;
+        
+        // 広めの範囲でサンプリング
+        const int radius = 8;
+        for (int y = -radius; y <= radius; y++) {
+            for (int x = -radius; x <= radius; x++) {
+                if (x == 0 && y == 0) continue;
+                
+                float2 offset = float2(x, y) * TexelSize * 2.0;
+                float sampleDepth = DepthTexture.Sample(LinearSampler, input.TexCoord + offset).r;
+                
+                if (sampleDepth <= 0.001) continue;
+                
+                // 距離に基づく重み
+                float dist = length(float2(x, y));
+                float spatialWeight = exp(-dist * dist / 32.0);
+                
+                // 深度差に基づく重み（近い深度ほど繋がりやすい）
+                float depthDiff = abs(centerDepth - sampleDepth);
+                float depthWeight = exp(-depthDiff * 50.0);
+                
+                float weight = spatialWeight * depthWeight;
+                totalWeight += weight;
+                totalDepth += sampleDepth * weight;
+            }
+        }
+        
+        float smoothDepth = totalDepth / totalWeight;
+        
+        // しきい値処理で輪郭をシャープに
+        float edge = smoothstep(0.001, 0.01, smoothDepth);
+        
+        return float4(smoothDepth, smoothDepth, smoothDepth, edge);
+    }
+)";
+
+        hr = D3DCompile(metaballShader, strlen(metaballShader), nullptr, nullptr, nullptr,
+            "PS_Metaball", "ps_4_0", 0, 0, &psBlob, &errorBlob);
+        if (FAILED(hr)) {
+            if (errorBlob) OutputDebugStringA((char*)errorBlob->GetBufferPointer());
+            OutputDebugStringA("SPHFluid: Metaball shader compile failed\n");
+        } else {
+            device->CreatePixelShader(psBlob->GetBufferPointer(), psBlob->GetBufferSize(), nullptr, &m_pMetaballPS);
+            OutputDebugStringA("SPHFluid: Metaball shader compiled\n");
+        }
+
+
+        //----------------------------------------------------------
+        // 厚みシェーダー（値を増加）
+        //----------------------------------------------------------
+        const char* thicknessShader = R"(
+    cbuffer CBMatrix : register(b0) {
+        float4x4 WorldViewProjection;
+    };
+    struct VS_INPUT {
+        float3 Position : POSITION;
+        float3 Normal   : NORMAL;
+        float4 Color    : COLOR;
+        float2 TexCoord : TEXCOORD;
+    };
+    struct VS_OUTPUT {
+        float4 Position : SV_Position;
+    };
+    VS_OUTPUT VS_Thickness(VS_INPUT input) {
+        VS_OUTPUT output;
+        output.Position = mul(float4(input.Position, 1.0), WorldViewProjection);
+        return output;
+    }
+    float4 PS_Thickness(VS_OUTPUT input) : SV_Target {
+        return float4(0.15, 0.15, 0.15, 1.0);  // 0.03 → 0.15 に増加
+    }
+)";
+
+
+        hr = D3DCompile(thicknessShader, strlen(thicknessShader), nullptr, nullptr, nullptr,
+            "PS_Thickness", "ps_4_0", 0, 0, &psBlob, &errorBlob);
+        if (FAILED(hr)) {
+            if (errorBlob) OutputDebugStringA((char*)errorBlob->GetBufferPointer());
+            return false;
+        }
+        device->CreatePixelShader(psBlob->GetBufferPointer(), psBlob->GetBufferSize(), nullptr, &m_pThicknessPS);
 
         //----------------------------------------------------------
         // ブラーシェーダー（適度な強さ）
@@ -271,11 +413,13 @@ namespace Engine {
         device->CreatePixelShader(psBlob->GetBufferPointer(), psBlob->GetBufferSize(), nullptr, &m_pBlurVPS);
 
         //----------------------------------------------------------
-        // 最終合成シェーダー（水表現強化版）
+        // 最終合成シェーダー（濃い水版）
         //----------------------------------------------------------
         const char* finalShader = R"(
     Texture2D DepthTexture : register(t0);
     Texture2D SceneTexture : register(t1);
+    Texture2D ThicknessTexture : register(t2);
+    Texture2D SceneDepthTexture : register(t3);
     SamplerState LinearSampler : register(s0);
     
     cbuffer CBFinal : register(b0) {
@@ -309,51 +453,70 @@ namespace Engine {
         float3 normal;
         normal.x = (depthL - depthR) * 2.0;
         normal.y = (depthT - depthB) * 2.0;
-        normal.z = 0.05;  // 小さくすると法線が急になる
+        normal.z = 0.1;
         return normalize(normal);
     }
     
     float4 PS_Final(VS_OUTPUT input) : SV_Target {
-        float depth = DepthTexture.Sample(LinearSampler, input.TexCoord).r;
+        float waterDepth = DepthTexture.Sample(LinearSampler, input.TexCoord).r;
+        float sceneDepth = SceneDepthTexture.Sample(LinearSampler, input.TexCoord).r;
+        float thickness = ThicknessTexture.Sample(LinearSampler, input.TexCoord).r;
+        float4 sceneColor = SceneTexture.Sample(LinearSampler, input.TexCoord);
         
-        // 深度がない場所は透明
-        if (depth <= 0.001 || depth >= 0.999) {
-            discard;
+        // 水がない場所
+        if (waterDepth <= 0.001 || waterDepth >= 0.999) {
+            return sceneColor;
+        }
+        
+        // ★水がシーンより奥にある場合は描画しない
+        if (waterDepth > sceneDepth && sceneDepth > 0.001) {
+            return sceneColor;
         }
         
         // 法線計算
         float3 normal = ComputeNormal(input.TexCoord);
-        
-        // 視線方向（画面に向かって）
         float3 viewDir = float3(0, 0, 1);
         
-        // フレネル効果（縁が明るく）
+        // フレネル効果
         float fresnel = pow(1.0 - saturate(dot(normal, viewDir)), FresnelPower);
         
         // ライティング
         float3 lightDir = normalize(LightDir);
-        float diffuse = max(dot(normal, lightDir), 0.0) * 0.6 + 0.4;
+        float diffuse = max(dot(normal, lightDir), 0.0) * 0.3 + 0.7;
         
-        // スペキュラ（ハイライト）
+        // スペキュラ
         float3 halfVec = normalize(lightDir + viewDir);
         float specular = pow(max(dot(normal, halfVec), 0.0), 128.0);
         
-        // 水の基本色
-        float3 waterBase = WaterColor * diffuse;
+        // 屈折
+        float refractionStrength = 0.04;
+        float2 refractOffset = normal.xy * refractionStrength;
+        float2 refractUV = clamp(input.TexCoord + refractOffset, 0.01, 0.99);
+        float3 refractColor = SceneTexture.Sample(LinearSampler, refractUV).rgb;
         
-        // 反射色（空の色っぽく）
-        float3 reflectColor = float3(0.6, 0.8, 1.0);
+        // 厚みによる色の変化
+        float thicknessFactor = saturate(thickness * 20.0);
         
-        // 最終色：水色 + フレネルで反射 + スペキュラ
-        float3 finalColor = lerp(waterBase, reflectColor, fresnel * 0.5);
-        finalColor += specular * float3(1.0, 1.0, 1.0) * 0.8;
+        // 水の色
+        float3 deepWater = float3(0.02, 0.15, 0.4);
+        float3 shallowWater = float3(0.3, 0.6, 0.9);
+        float3 waterBase = lerp(shallowWater, deepWater, thicknessFactor) * diffuse;
         
-        // エッジを少しソフトに
-        float edgeSoft = smoothstep(0.001, 0.05, depth) * smoothstep(0.999, 0.95, depth);
+        // 背景との合成
+        float alpha = lerp(0.4, 0.95, thicknessFactor);
+        float3 blendedColor = lerp(refractColor, waterBase, alpha);
         
-        return float4(finalColor, WaterAlpha * edgeSoft);
+        // 反射
+        float3 reflectColor = float3(0.7, 0.85, 1.0);
+        blendedColor = lerp(blendedColor, reflectColor, fresnel * 0.5);
+        
+        // スペキュラ追加
+        blendedColor += specular * float3(1.0, 1.0, 1.0) * 0.8;
+        
+        return float4(blendedColor, 1.0);
     }
 )";
+
 
 
         hr = D3DCompile(finalShader, strlen(finalShader), nullptr, nullptr, nullptr,
@@ -437,7 +600,7 @@ namespace Engine {
             }
         }
 
-        // スクリーンスペース用リソース（オプション）
+        // スクリーンスペース用リソース
         auto& renderer = Renderer::GetInstance();
         uint32_t width = renderer.GetScreenWidth();
         uint32_t height = renderer.GetScreenHeight();
@@ -445,18 +608,73 @@ namespace Engine {
         m_depthRT = std::make_unique<RenderTarget>();
         m_blurRT1 = std::make_unique<RenderTarget>();
         m_blurRT2 = std::make_unique<RenderTarget>();
+        m_thicknessRT = std::make_unique<RenderTarget>();
+        m_sceneRT = std::make_unique<RenderTarget>();
         m_fullscreenQuad = std::make_unique<FullscreenQuad>();
 
         bool ssSuccess = true;
-        if (!m_depthRT->Create(device, width, height, DXGI_FORMAT_R32_FLOAT, true)) ssSuccess = false;
-        if (!m_blurRT1->Create(device, width, height, DXGI_FORMAT_R32_FLOAT, false)) ssSuccess = false;
-        if (!m_blurRT2->Create(device, width, height, DXGI_FORMAT_R32_FLOAT, false)) ssSuccess = false;
-        if (!m_fullscreenQuad->Initialize(device)) ssSuccess = false;
-        if (!InitializeShaders(device)) ssSuccess = false;
+
+        // 深度バッファ
+        if (!m_depthRT->Create(device, width, height, DXGI_FORMAT_R32_FLOAT, true)) {
+            OutputDebugStringA("SPHFluid: 深度RT作成失敗\n");
+            ssSuccess = false;
+        }
+
+        // シーン深度コピー用バッファ
+        m_sceneDepthRT = std::make_unique<RenderTarget>();
+        if (!m_sceneDepthRT->Create(device, width, height, DXGI_FORMAT_R32_FLOAT, true)) {
+            OutputDebugStringA("SPHFluid: Scene depth RT create failed\n");
+            ssSuccess = false;
+        }
+
+		// メタボール合成用バッファ
+        m_metaballRT = std::make_unique<RenderTarget>();
+        if (!m_metaballRT->Create(device, width, height, DXGI_FORMAT_R32_FLOAT, false)) {
+            OutputDebugStringA("SPHFluid: Metaball RT create failed\n");
+            ssSuccess = false;
+        }
+
+        // ブラー用バッファ1
+        if (!m_blurRT1->Create(device, width, height, DXGI_FORMAT_R32_FLOAT, false)) {
+            OutputDebugStringA("SPHFluid: ブラーRT1作成失敗\n");
+            ssSuccess = false;
+        }
+
+        // ブラー用バッファ2
+        if (!m_blurRT2->Create(device, width, height, DXGI_FORMAT_R32_FLOAT, false)) {
+            OutputDebugStringA("SPHFluid: ブラーRT2作成失敗\n");
+            ssSuccess = false;
+        }
+
+        // 厚みバッファ
+        if (!m_thicknessRT->Create(device, width, height, DXGI_FORMAT_R16_FLOAT, false)) {
+            OutputDebugStringA("SPHFluid: 厚みRT作成失敗\n");
+            ssSuccess = false;
+        }
+
+        // シーンコピー用バッファ（屈折用）
+        if (!m_sceneRT->Create(device, width, height, DXGI_FORMAT_R8G8B8A8_UNORM, false)) {
+            OutputDebugStringA("SPHFluid: シーンRT作成失敗\n");
+            ssSuccess = false;
+        }
+
+        // フルスクリーンクアッド
+        if (!m_fullscreenQuad->Initialize(device)) {
+            OutputDebugStringA("SPHFluid: フルスクリーンクアッド作成失敗\n");
+            ssSuccess = false;
+        }
+
+        // シェーダー初期化
+        if (!InitializeShaders(device)) {
+            OutputDebugStringA("SPHFluid: シェーダー初期化失敗\n");
+            ssSuccess = false;
+        }
 
         if (!ssSuccess) {
             OutputDebugStringA("SPHFluid: スクリーンスペース初期化失敗、通常描画モード\n");
             m_screenSpaceEnabled = false;
+        } else {
+            OutputDebugStringA("SPHFluid: スクリーンスペース初期化成功\n");
         }
 
         m_initialized = true;
@@ -464,19 +682,25 @@ namespace Engine {
         return true;
     }
 
-    //==========================================================
-    // 終了処理
-    //==========================================================
     void SPHFluid::Finalize() {
         m_sphereMesh.reset();
         m_depthRT.reset();
         m_blurRT1.reset();
         m_blurRT2.reset();
+        m_thicknessRT.reset();   // ★追加
+        m_sceneRT.reset();       // ★追加
         m_fullscreenQuad.reset();
+
+        m_sceneDepthRT.reset();
+
+        m_metaballRT.reset();
+        m_pMetaballPS.Reset();
 
         m_pAlphaBlendState.Reset();
         m_pDepthVS.Reset();
         m_pDepthPS.Reset();
+        m_pThicknessPS.Reset();  // ★追加
+        m_pAdditiveBlendState.Reset();  // ★追加
         m_pBlurVS.Reset();
         m_pBlurHPS.Reset();
         m_pBlurVPS.Reset();
@@ -494,6 +718,7 @@ namespace Engine {
         m_particleCount = 0;
         m_initialized = false;
     }
+
 
     //==========================================================
     // パーティクル生成
@@ -517,6 +742,7 @@ namespace Engine {
             p.density = m_params.restDensity;
             p.pressure = 0.0f;
             p.mass = 1.0f;
+            p.lifetime = m_particleLifetime;  // 寿命を設定
 
             m_particles.push_back(p);
             m_particleCount++;
@@ -666,16 +892,48 @@ namespace Engine {
     void SPHFluid::HandleBoundaries() {
         const float damping = 0.3f;
         const float eps = 0.01f;
+
         for (uint32_t i = 0; i < m_particleCount; ++i) {
             SPHParticle& p = m_particles[i];
-            if (p.position.x < m_params.boundaryMin.x + eps) { p.position.x = m_params.boundaryMin.x + eps; p.velocity.x *= -damping; }
-            if (p.position.x > m_params.boundaryMax.x - eps) { p.position.x = m_params.boundaryMax.x - eps; p.velocity.x *= -damping; }
-            if (p.position.y < m_params.boundaryMin.y + eps) { p.position.y = m_params.boundaryMin.y + eps; p.velocity.y *= -damping; }
-            if (p.position.y > m_params.boundaryMax.y - eps) { p.position.y = m_params.boundaryMax.y - eps; p.velocity.y *= -damping; }
-            if (p.position.z < m_params.boundaryMin.z + eps) { p.position.z = m_params.boundaryMin.z + eps; p.velocity.z *= -damping; }
-            if (p.position.z > m_params.boundaryMax.z - eps) { p.position.z = m_params.boundaryMax.z - eps; p.velocity.z *= -damping; }
+
+            // マップとの衝突判定
+            if (m_mapCollisionEnabled) {
+                HandleMapCollision(p);
+            }
+
+            // プレイヤーとの衝突判定
+            if (m_playerCollisionEnabled) {
+                HandlePlayerCollision(p);
+            }
+
+            // 境界ボックス（フォールバック - マップ外に出ないように）
+            if (p.position.x < m_params.boundaryMin.x + eps) {
+                p.position.x = m_params.boundaryMin.x + eps;
+                p.velocity.x *= -damping;
+            }
+            if (p.position.x > m_params.boundaryMax.x - eps) {
+                p.position.x = m_params.boundaryMax.x - eps;
+                p.velocity.x *= -damping;
+            }
+            if (p.position.y < m_params.boundaryMin.y + eps) {
+                p.position.y = m_params.boundaryMin.y + eps;
+                p.velocity.y *= -damping;
+            }
+            if (p.position.y > m_params.boundaryMax.y - eps) {
+                p.position.y = m_params.boundaryMax.y - eps;
+                p.velocity.y *= -damping;
+            }
+            if (p.position.z < m_params.boundaryMin.z + eps) {
+                p.position.z = m_params.boundaryMin.z + eps;
+                p.velocity.z *= -damping;
+            }
+            if (p.position.z > m_params.boundaryMax.z - eps) {
+                p.position.z = m_params.boundaryMax.z - eps;
+                p.velocity.z *= -damping;
+            }
         }
     }
+
 
     void SPHFluid::SimulateCPU(float dt) {
         if (m_particleCount == 0) return;
@@ -687,17 +945,24 @@ namespace Engine {
     }
 
     void SPHFluid::Update(ID3D11DeviceContext* context, float deltaTime) {
-        if (!m_initialized) return;
-        const float fixedDt = 1.0f / 120.0f;
-        static float acc = 0.0f;
-        acc += deltaTime;
-        int steps = 0;
-        while (acc >= fixedDt && steps < 4) {
-            SimulateCPU(fixedDt);
-            acc -= fixedDt;
-            steps++;
+        if (m_particleCount == 0) return;
+
+        // 寿命更新と削除
+        for (size_t i = 0; i < m_particles.size(); ) {
+            m_particles[i].lifetime -= deltaTime;
+
+            if (m_particles[i].lifetime <= 0.0f) {
+                // 末尾と入れ替えて削除（高速）
+                m_particles[i] = m_particles.back();
+                m_particles.pop_back();
+                --m_particleCount;
+            } else {
+                ++i;
+            }
         }
-        if (acc > fixedDt * 4) acc = 0.0f;
+
+        // 既存のシミュレーション処理...
+        SimulateCPU(deltaTime);
     }
 
     //==========================================================
@@ -728,7 +993,7 @@ namespace Engine {
         }
 
         ID3D11Buffer* matBuffer = renderer.GetMaterialBuffer();
-        uint32_t drawCount = std::min(m_particleCount, 500u);
+        uint32_t drawCount = std::min(m_particleCount, 10000u);
 
         //----------------------------------------------------------
         // カメラ位置と視線方向を取得して深度ソート
@@ -825,10 +1090,10 @@ namespace Engine {
     }
 
     //==========================================================
-    // スクリーンスペース描画
+    // スクリーンスペース描画（屈折・厚み対応版）
     //==========================================================
     void SPHFluid::DrawScreenSpace(ID3D11DeviceContext* context) {
-        if (!m_depthRT || !m_blurRT1 || !m_blurRT2 || !m_fullscreenQuad) {
+        if (!m_depthRT || !m_blurRT1 || !m_blurRT2 || !m_fullscreenQuad || !m_thicknessRT || !m_sceneRT) {
             DrawParticles(context);
             return;
         }
@@ -837,39 +1102,125 @@ namespace Engine {
         uint32_t width = renderer.GetScreenWidth();
         uint32_t height = renderer.GetScreenHeight();
 
+        // 現在のレンダーターゲットを保存
         ComPtr<ID3D11RenderTargetView> prevRTV;
         ComPtr<ID3D11DepthStencilView> prevDSV;
         context->OMGetRenderTargets(1, &prevRTV, &prevDSV);
 
         //----------------------------------------------------------
-        // パス1: 深度描画
+        // パス0: シーンをコピー（屈折用）
+        //----------------------------------------------------------
+        {
+            ComPtr<ID3D11Resource> backBufferRes;
+            prevRTV->GetResource(&backBufferRes);
+
+            ComPtr<ID3D11Resource> sceneRes;
+            ID3D11RenderTargetView* sceneRTV = m_sceneRT->GetRTV();
+            sceneRTV->GetResource(&sceneRes);
+
+            context->CopyResource(sceneRes.Get(), backBufferRes.Get());
+        }
+
+        // カメラからView/Projection行列を計算
+        Game::Camera& camera = Game::GetMainCamera();
+        XMVECTOR eyePos = XMVectorSet(camera.position.x, camera.position.y, camera.position.z, 1.0f);
+        XMVECTOR focusPos = XMVectorSet(camera.Atposition.x, camera.Atposition.y, camera.Atposition.z, 1.0f);
+        XMVECTOR upDir = XMVectorSet(camera.Upvector.x, camera.Upvector.y, camera.Upvector.z, 0.0f);
+        XMMATRIX viewMatrix = XMMatrixLookAtLH(eyePos, focusPos, upDir);
+        XMMATRIX projMatrix = XMMatrixPerspectiveFovLH(
+            XMConvertToRadians(camera.fov),
+            static_cast<float>(width) / static_cast<float>(height),
+            camera.nearclip,
+            camera.farclip
+        );
+
+        //----------------------------------------------------------
+        // パス1: 深度描画（★シーンの深度バッファで深度テスト）
         //----------------------------------------------------------
         m_depthRT->Clear(context, 0, 0, 0, 0);
-        m_depthRT->SetAsTarget(context);
 
-        {
-            D3D11_MAPPED_SUBRESOURCE mapped;
-            context->Map(m_pFluidCB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
-            CBFluid* cb = static_cast<CBFluid*>(mapped.pData);
-            XMStoreFloat4x4(&cb->View, XMMatrixIdentity());
-            XMStoreFloat4x4(&cb->Projection, XMMatrixIdentity());
-            cb->PointRadius = m_particleScale;
-            context->Unmap(m_pFluidCB.Get(), 0);
-        }
-        context->VSSetConstantBuffers(2, 1, m_pFluidCB.GetAddressOf());
-        context->PSSetConstantBuffers(2, 1, m_pFluidCB.GetAddressOf());
+        // ★シーンのDSVを使ってレンダーターゲット設定（深度テストが効く）
+        ID3D11RenderTargetView* depthRTV = m_depthRT->GetRTV();
+        context->OMSetRenderTargets(1, &depthRTV, prevDSV.Get());
+
+        D3D11_VIEWPORT vp = {};
+        vp.Width = static_cast<float>(width);
+        vp.Height = static_cast<float>(height);
+        vp.MinDepth = 0.0f;
+        vp.MaxDepth = 1.0f;
+        context->RSSetViewports(1, &vp);
 
         context->VSSetShader(m_pDepthVS.Get(), nullptr, 0);
         context->PSSetShader(m_pDepthPS.Get(), nullptr, 0);
 
-        uint32_t drawCount = std::min(m_particleCount, 500u);
+        uint32_t drawCount = std::min(m_particleCount, 10000u);
         for (uint32_t i = 0; i < drawCount; ++i) {
             const SPHParticle& p = m_particles[i];
-            XMMATRIX world = XMMatrixScaling(m_particleScale * 2, m_particleScale * 2, m_particleScale * 2) *
+            XMMATRIX world = XMMatrixScaling(m_particleScale, m_particleScale, m_particleScale) *
                 XMMatrixTranslation(p.position.x, p.position.y, p.position.z);
             renderer.SetWorldMatrix(world);
             m_sphereMesh->Bind(context);
             m_sphereMesh->Draw(context);
+        }
+
+        //----------------------------------------------------------
+        // パス1.5: 厚み描画（★同様にシーンの深度バッファで深度テスト）
+        //----------------------------------------------------------
+        m_thicknessRT->Clear(context, 0, 0, 0, 0);
+
+        ID3D11RenderTargetView* thicknessRTV = m_thicknessRT->GetRTV();
+        context->OMSetRenderTargets(1, &thicknessRTV, prevDSV.Get());
+        context->RSSetViewports(1, &vp);
+
+        // 加算ブレンド有効
+        float blendFactor[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+        context->OMSetBlendState(m_pAdditiveBlendState.Get(), blendFactor, 0xffffffff);
+
+        context->PSSetShader(m_pThicknessPS.Get(), nullptr, 0);
+
+        for (uint32_t i = 0; i < drawCount; ++i) {
+            const SPHParticle& p = m_particles[i];
+            XMMATRIX world = XMMatrixScaling(m_particleScale, m_particleScale, m_particleScale) *
+                XMMatrixTranslation(p.position.x, p.position.y, p.position.z);
+            renderer.SetWorldMatrix(world);
+            m_sphereMesh->Bind(context);
+            m_sphereMesh->Draw(context);
+        }
+
+        // ブレンドステートをリセット
+        context->OMSetBlendState(nullptr, blendFactor, 0xffffffff);
+
+        //----------------------------------------------------------
+        // パス1.5: メタボール合成（深度を滑らかに繋げる）
+        //----------------------------------------------------------
+        if (m_pMetaballPS && m_metaballRT) {
+            m_metaballRT->Clear(context, 0, 0, 0, 0);
+            m_metaballRT->SetAsTarget(context);
+
+            {
+                D3D11_MAPPED_SUBRESOURCE mapped;
+                context->Map(m_pBlurCB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
+                CBBlur* cb = static_cast<CBBlur*>(mapped.pData);
+                cb->TexelSize = XMFLOAT2(1.0f / width, 1.0f / height);
+                cb->BlurScale = 1.0f;      // Threshold として使用
+                cb->BlurDepthFalloff = 1.0f; // Smoothness として使用
+                context->Unmap(m_pBlurCB.Get(), 0);
+            }
+            context->VSSetConstantBuffers(0, 1, m_pBlurCB.GetAddressOf());
+            context->PSSetConstantBuffers(0, 1, m_pBlurCB.GetAddressOf());
+
+            context->IASetInputLayout(m_pQuadInputLayout.Get());
+            context->VSSetShader(m_pBlurVS.Get(), nullptr, 0);
+            context->PSSetShader(m_pMetaballPS.Get(), nullptr, 0);
+
+            ID3D11ShaderResourceView* depthSRV = m_depthRT->GetSRV();
+            context->PSSetShaderResources(0, 1, &depthSRV);
+            context->PSSetSamplers(0, 1, m_pLinearSampler.GetAddressOf());
+
+            m_fullscreenQuad->Draw(context);
+
+            // 以降のブラーパスはメタボールRTを使用
+            // depthSRV → metaballSRV に変更
         }
 
         //----------------------------------------------------------
@@ -883,8 +1234,8 @@ namespace Engine {
             context->Map(m_pBlurCB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
             CBBlur* cb = static_cast<CBBlur*>(mapped.pData);
             cb->TexelSize = XMFLOAT2(1.0f / width, 1.0f / height);
-            cb->BlurScale = 3.0f;         // ピクセル間隔の倍率
-            cb->BlurDepthFalloff = 0.0f;  // 使わない
+            cb->BlurScale = 2.0f;
+            cb->BlurDepthFalloff = 1.0f;
             context->Unmap(m_pBlurCB.Get(), 0);
         }
         context->VSSetConstantBuffers(0, 1, m_pBlurCB.GetAddressOf());
@@ -894,8 +1245,9 @@ namespace Engine {
         context->VSSetShader(m_pBlurVS.Get(), nullptr, 0);
         context->PSSetShader(m_pBlurHPS.Get(), nullptr, 0);
 
-        ID3D11ShaderResourceView* depthSRV = m_depthRT->GetSRV();
-        context->PSSetShaderResources(0, 1, &depthSRV);
+        // ★メタボールRTがあればそれを使用
+        ID3D11ShaderResourceView* inputSRV = (m_metaballRT) ? m_metaballRT->GetSRV() : m_depthRT->GetSRV();
+        context->PSSetShaderResources(0, 1, &inputSRV);
         context->PSSetSamplers(0, 1, m_pPointSampler.GetAddressOf());
 
         m_fullscreenQuad->Draw(context);
@@ -914,9 +1266,8 @@ namespace Engine {
         m_fullscreenQuad->Draw(context);
 
         //----------------------------------------------------------
-        // パス3.5〜3.8: 追加ブラー（2回目）
+        // パス3.5: 追加ブラー（水平）
         //----------------------------------------------------------
-        // 水平
         m_blurRT1->Clear(context, 0, 0, 0, 0);
         m_blurRT1->SetAsTarget(context);
         context->PSSetShader(m_pBlurHPS.Get(), nullptr, 0);
@@ -926,7 +1277,9 @@ namespace Engine {
         }
         m_fullscreenQuad->Draw(context);
 
-        // 垂直
+        //----------------------------------------------------------
+        // パス3.6: 追加ブラー（垂直）
+        //----------------------------------------------------------
         m_blurRT2->Clear(context, 0, 0, 0, 0);
         m_blurRT2->SetAsTarget(context);
         context->PSSetShader(m_pBlurVPS.Get(), nullptr, 0);
@@ -937,36 +1290,14 @@ namespace Engine {
         m_fullscreenQuad->Draw(context);
 
         //----------------------------------------------------------
-        // パス3.9〜3.12: 追加ブラー（3回目）
+        // パス4: 最終合成（屈折・厚み対応）
         //----------------------------------------------------------
-        // 水平
-        m_blurRT1->Clear(context, 0, 0, 0, 0);
-        m_blurRT1->SetAsTarget(context);
-        context->PSSetShader(m_pBlurHPS.Get(), nullptr, 0);
-        {
-            ID3D11ShaderResourceView* srv = m_blurRT2->GetSRV();
-            context->PSSetShaderResources(0, 1, &srv);
-        }
-        m_fullscreenQuad->Draw(context);
-
-        // 垂直
-        m_blurRT2->Clear(context, 0, 0, 0, 0);
-        m_blurRT2->SetAsTarget(context);
-        context->PSSetShader(m_pBlurVPS.Get(), nullptr, 0);
-        {
-            ID3D11ShaderResourceView* srv = m_blurRT1->GetSRV();
-            context->PSSetShaderResources(0, 1, &srv);
-        }
-        m_fullscreenQuad->Draw(context);
-        //----------------------------------------------------------
-        // パス4: 最終合成
-        //----------------------------------------------------------
-        ID3D11ShaderResourceView* nullSRVs[2] = { nullptr, nullptr };
-        context->PSSetShaderResources(0, 2, nullSRVs);
+        ID3D11ShaderResourceView* nullSRVs[3] = { nullptr, nullptr, nullptr };
+        context->PSSetShaderResources(0, 3, nullSRVs);
 
         context->OMSetRenderTargets(1, prevRTV.GetAddressOf(), prevDSV.Get());
 
-        D3D11_VIEWPORT vp = {};
+        vp = {};
         vp.Width = static_cast<float>(width);
         vp.Height = static_cast<float>(height);
         vp.MinDepth = 0.0f;
@@ -977,12 +1308,12 @@ namespace Engine {
             D3D11_MAPPED_SUBRESOURCE mapped;
             context->Map(m_pFinalCB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
             CBFinal* cb = static_cast<CBFinal*>(mapped.pData);
-            XMStoreFloat4x4(&cb->InvProjection, XMMatrixIdentity());
+            XMStoreFloat4x4(&cb->InvProjection, XMMatrixTranspose(XMMatrixInverse(nullptr, projMatrix)));
             cb->TexelSize = XMFLOAT2(1.0f / width, 1.0f / height);
-            cb->WaterColor = XMFLOAT3(m_particleColor.x, m_particleColor.y, m_particleColor.z);
-            cb->WaterAlpha = m_particleColor.w;
-            cb->LightDir = XMFLOAT3(0.5f, 1.0f, 0.3f);
-            cb->FresnelPower = 2.0f;
+            cb->WaterColor = XMFLOAT3(0.1f, 0.4f, 0.75f);
+            cb->WaterAlpha = 0.9f;
+            cb->LightDir = XMFLOAT3(0.3f, 1.0f, 0.5f);
+            cb->FresnelPower = 2.5f;
             context->Unmap(m_pFinalCB.Get(), 0);
         }
         context->VSSetConstantBuffers(0, 1, m_pFinalCB.GetAddressOf());
@@ -991,16 +1322,19 @@ namespace Engine {
         context->VSSetShader(m_pFinalVS.Get(), nullptr, 0);
         context->PSSetShader(m_pFinalPS.Get(), nullptr, 0);
 
-        ID3D11ShaderResourceView* blur2SRV = m_blurRT2->GetSRV();
-        ID3D11ShaderResourceView* nullSRV = nullptr;
-        context->PSSetShaderResources(0, 1, &blur2SRV);
-        context->PSSetShaderResources(1, 1, &nullSRV);
+        // テクスチャをバインド
+        ID3D11ShaderResourceView* finalSRVs[3] = {
+            m_blurRT2->GetSRV(),      // t0: 深度（ブラー済み）
+            m_sceneRT->GetSRV(),      // t1: シーン（屈折用）
+            m_thicknessRT->GetSRV()   // t2: 厚み
+        };
+        context->PSSetShaderResources(0, 3, finalSRVs);
         context->PSSetSamplers(0, 1, m_pLinearSampler.GetAddressOf());
 
         m_fullscreenQuad->Draw(context);
 
-        context->PSSetShaderResources(0, 1, &nullSRV);
-        context->PSSetShaderResources(1, 1, &nullSRV);
+        // クリーンアップ
+        context->PSSetShaderResources(0, 3, nullSRVs);
     }
 
     //==========================================================
@@ -1067,5 +1401,133 @@ namespace Engine {
         ID3D11ShaderResourceView* srvs[2] = { prevSRV0.Get(), prevSRV1.Get() };
         context->PSSetShaderResources(0, 2, srvs);
     }
+
+    //==========================================================
+    // 速度付きで1粒子を生成
+    //==========================================================
+    void SPHFluid::SpawnParticleWithVelocity(const XMFLOAT3& position, const XMFLOAT3& velocity) {
+        if (m_particleCount >= m_maxParticles) return;
+
+        SPHParticle p;
+        p.position = position;
+        p.velocity = velocity;
+        p.acceleration = XMFLOAT3(0.0f, 0.0f, 0.0f);
+        p.density = m_params.restDensity;
+        p.pressure = 0.0f;
+        p.mass = 1.0f;
+
+        m_particles.push_back(p);
+        m_particleCount++;
+        m_params.particleCount = m_particleCount;
+    }
+
+    //==========================================================
+// マップとの衝突処理
+//==========================================================
+    void SPHFluid::HandleMapCollision(SPHParticle& particle) {
+        const float damping = 0.2f;
+        const float particleRadius = m_particleScale * 0.5f;
+
+        // 粒子用の簡易コライダーを作成
+        Engine::BoxCollider particleCollider;
+        particleCollider.SetCenter(particle.position);
+        particleCollider.SetSize(XMFLOAT3(particleRadius * 2, particleRadius * 2, particleRadius * 2));
+
+        // マップとの衝突判定
+        XMFLOAT3 penetration;
+        if (Engine::MapCollision::GetInstance().CheckCollision(&particleCollider, penetration)) {
+            // めり込み解消
+            particle.position.x += penetration.x;
+            particle.position.y += penetration.y;
+            particle.position.z += penetration.z;
+
+            // 衝突した軸の速度を反射・減衰
+            if (fabsf(penetration.x) > 0.001f) {
+                particle.velocity.x *= -damping;
+            }
+            if (fabsf(penetration.y) > 0.001f) {
+                particle.velocity.y *= -damping;
+                // 床に当たったら水平方向にも減衰（水が広がる感じ）
+                if (penetration.y > 0) {
+                    particle.velocity.x *= 0.7f;
+                    particle.velocity.z *= 0.7f;
+                }
+            }
+            if (fabsf(penetration.z) > 0.001f) {
+                particle.velocity.z *= -damping;
+            }
+        }
+    }
+
+
+    //==========================================================
+// プレイヤーとの衝突処理
+//==========================================================
+    void SPHFluid::HandlePlayerCollision(SPHParticle& particle) {
+        const float damping = 0.3f;
+        const float particleRadius = m_particleScale * 0.5f;
+
+        // PlayerManagerから全プレイヤーを取得
+        Game::PlayerManager& playerMgr = Game::PlayerManager::GetInstance();
+
+        for (int playerId = 1; playerId <= 2; ++playerId) {
+            Game::Player* player = playerMgr.GetPlayer(playerId);
+            if (!player || !player->IsAlive()) continue;
+
+            // プレイヤーのコライダー情報を取得
+            XMFLOAT3 playerPos = player->GetPosition();
+            XMFLOAT3 playerSize = XMFLOAT3(0.8f, 1.8f, 0.8f);  // プレイヤーサイズ
+
+            XMFLOAT3 playerMin = {
+                playerPos.x - playerSize.x * 0.5f,
+                playerPos.y - playerSize.y * 0.5f,
+                playerPos.z - playerSize.z * 0.5f
+            };
+            XMFLOAT3 playerMax = {
+                playerPos.x + playerSize.x * 0.5f,
+                playerPos.y + playerSize.y * 0.5f,
+                playerPos.z + playerSize.z * 0.5f
+            };
+
+            // 粒子がプレイヤーのAABB内にあるか
+            if (particle.position.x + particleRadius > playerMin.x &&
+                particle.position.x - particleRadius < playerMax.x &&
+                particle.position.y + particleRadius > playerMin.y &&
+                particle.position.y - particleRadius < playerMax.y &&
+                particle.position.z + particleRadius > playerMin.z &&
+                particle.position.z - particleRadius < playerMax.z) {
+
+                // 各軸のめり込み量を計算
+                float overlapX1 = playerMax.x - (particle.position.x - particleRadius);
+                float overlapX2 = (particle.position.x + particleRadius) - playerMin.x;
+                float overlapY1 = playerMax.y - (particle.position.y - particleRadius);
+                float overlapY2 = (particle.position.y + particleRadius) - playerMin.y;
+                float overlapZ1 = playerMax.z - (particle.position.z - particleRadius);
+                float overlapZ2 = (particle.position.z + particleRadius) - playerMin.z;
+
+                // 最小のめり込み方向を選択
+                float minOverlapX = (overlapX1 < overlapX2) ? -overlapX1 : overlapX2;
+                float minOverlapY = (overlapY1 < overlapY2) ? -overlapY1 : overlapY2;
+                float minOverlapZ = (overlapZ1 < overlapZ2) ? -overlapZ1 : overlapZ2;
+
+                float absX = fabsf(minOverlapX);
+                float absY = fabsf(minOverlapY);
+                float absZ = fabsf(minOverlapZ);
+
+                // 最も浅い軸で押し出す
+                if (absX <= absY && absX <= absZ) {
+                    particle.position.x += minOverlapX;
+                    particle.velocity.x *= -damping;
+                } else if (absY <= absX && absY <= absZ) {
+                    particle.position.y += minOverlapY;
+                    particle.velocity.y *= -damping;
+                } else {
+                    particle.position.z += minOverlapZ;
+                    particle.velocity.z *= -damping;
+                }
+            }
+        }
+    }
+
 
 } // namespace Engine

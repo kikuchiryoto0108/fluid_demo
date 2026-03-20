@@ -41,6 +41,15 @@ namespace Engine {
         void SetScreenSpaceEnabled(bool enabled) { m_screenSpaceEnabled = enabled; }
         bool IsScreenSpaceEnabled() const { return m_screenSpaceEnabled; }
 
+        // 速度付きで1粒子を生成
+        void SpawnParticleWithVelocity(const XMFLOAT3& position, const XMFLOAT3& velocity);
+        // 衝突判定設定
+        void SetMapCollisionEnabled(bool enabled) { m_mapCollisionEnabled = enabled; }
+        void SetPlayerCollisionEnabled(bool enabled) { m_playerCollisionEnabled = enabled; }
+
+        void SetParticleLifetime(float lifetime) { m_particleLifetime = lifetime; }
+        float GetParticleLifetime() const { return m_particleLifetime; }
+
     private:
         // シミュレーション
         void SimulateCPU(float dt);
@@ -60,6 +69,15 @@ namespace Engine {
         // 初期化
         bool InitializeShaders(ID3D11Device* device);
         bool CreateBlendStates(ID3D11Device* device);
+        // 衝突判定フラグ
+        bool m_mapCollisionEnabled = true;
+        bool m_playerCollisionEnabled = true;
+
+        // 衝突処理
+        void HandleMapCollision(SPHParticle& particle);
+        void HandlePlayerCollision(SPHParticle& particle);
+
+        float m_particleLifetime = 3.0f;  // デフォルト3秒
 
     private:
         std::vector<SPHParticle> m_particles;
@@ -86,6 +104,9 @@ namespace Engine {
         std::unique_ptr<RenderTarget> m_blurRT2;
         std::unique_ptr<FullscreenQuad> m_fullscreenQuad;
 
+        // シーン深度コピー用
+        std::unique_ptr<RenderTarget> m_sceneDepthRT;
+
         // シェーダー
         ComPtr<ID3D11VertexShader> m_pDepthVS;
         ComPtr<ID3D11PixelShader> m_pDepthPS;
@@ -104,5 +125,17 @@ namespace Engine {
         // サンプラー
         ComPtr<ID3D11SamplerState> m_pPointSampler;
         ComPtr<ID3D11SamplerState> m_pLinearSampler;
+
+        // 追加のレンダーターゲット
+        std::unique_ptr<RenderTarget> m_thicknessRT;  // 厚みバッファ
+        std::unique_ptr<RenderTarget> m_sceneRT;      // シーンコピー用
+
+        // 厚みシェーダー
+        ComPtr<ID3D11PixelShader> m_pThicknessPS;
+        ComPtr<ID3D11BlendState> m_pAdditiveBlendState;
+
+        // メタボール用シェーダー
+        ComPtr<ID3D11PixelShader> m_pMetaballPS;
+        std::unique_ptr<RenderTarget> m_metaballRT;
     };
 }

@@ -83,33 +83,35 @@ namespace Game {
 
             m_fluid = std::make_unique<Engine::SPHFluid>();
 
-            if (!m_fluid->Initialize(renderer.GetDevice(), 2000)) {
-                OutputDebugStringA("SPHFluid: 初期化失敗\n");
+            if (!m_fluid->Initialize(renderer.GetDevice(), 10000)) {  // 粒子数を増やす
+                OutputDebugStringA("SPHFluid: Initialize failed\n");
                 m_fluid.reset();
             } else {
-                OutputDebugStringA("SPHFluid: 初期化成功！\n");
+                OutputDebugStringA("SPHFluid: Initialize success!\n");
 
-                // 境界設定
+                // 境界を広く設定（マップ全体をカバー）
                 m_fluid->SetBoundary(
-                    DirectX::XMFLOAT3(-3.0f, -22.9f, -3.0f),
-                    DirectX::XMFLOAT3(3.0f, 0.0f, 3.0f)
+                    DirectX::XMFLOAT3(-30.0f, -30.0f, -30.0f),
+                    DirectX::XMFLOAT3(30.0f, 30.0f, 30.0f)
                 );
 
-                // 色設定（少し明るめ）
-                m_fluid->SetParticleColor(DirectX::XMFLOAT4(0.15f, 0.45f, 0.85f, 0.65f));
+                // 衝突判定を有効化
+                m_fluid->SetMapCollisionEnabled(true);
+                m_fluid->SetPlayerCollisionEnabled(true);
 
-                // 粒子サイズ（少し大きめ）
-                m_fluid->SetParticleScale(0.2f);
+                // 色・サイズ設定
+                m_fluid->SetParticleColor(DirectX::XMFLOAT4(0.15f, 0.45f, 0.85f, 0.65f));
+                m_fluid->SetParticleScale(0.05f);
 
                 // スクリーンスペース有効化
                 m_fluid->SetScreenSpaceEnabled(true);
 
-                // 初期パーティクル生成
-                m_fluid->SpawnParticles(
-                    DirectX::XMFLOAT3(0.0f, -5.0f, 0.0f),
-                    120,
-                    1.5f
-                );
+                // 初期粒子は少なめ（水鉄砲から出す）
+                //m_fluid->SpawnParticles(
+                //    DirectX::XMFLOAT3(0.0f, 0.0f, 0.0f),
+                //    100,
+                //    1.0f
+                //);
             }
         }
 

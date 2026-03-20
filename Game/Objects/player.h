@@ -13,6 +13,7 @@
 #include "Game/Objects/game_object_base.h"
 #include "Game/Objects/gun.h"
 #include "Engine/Collision/box_collider.h"
+#include "Game/Objects/water_gun.h"
 #include <DirectXMath.h>
 #include <memory>
 
@@ -82,6 +83,9 @@ private:
     // --- 内部ヘルパー関数 ---
     void UpdateVisualObject();
 
+    // 水鉄砲
+    std::unique_ptr<WaterGun> m_waterGun;
+
 public:
     Player();
     ~Player();
@@ -139,6 +143,9 @@ public:
 
     // --- ネットワーク同期用: 強制的に死亡状態にする ---
     void ForceDeath();
+
+    // 水鉄砲
+    WaterGun* GetWaterGun() { return m_waterGun.get(); }
 };
 
 } // namespace Game

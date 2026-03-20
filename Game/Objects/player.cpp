@@ -16,6 +16,7 @@
 #include "Engine/Core/debug_log.h"
 #include <cmath>
 #include <algorithm>
+#include "Game/game_manager.h"
 
 // Engine名前空間のDebugLogを使用
 using Engine::DebugLog;
@@ -100,6 +101,17 @@ void Player::Initialize(Map* map, ID3D11ShaderResourceView* texture, int id, Vie
     }
     
     DebugLog("[Player::Initialize] COMPLETE for player %d\n", playerId);
+
+    // --- 水鉄砲の初期化 ---
+    m_waterGun = std::make_unique<WaterGun>();
+    auto* fluid = GameManager::Instance().GetFluid();
+    if (fluid) {
+        m_waterGun->Initialize(fluid);
+        DebugLog("[Player::Initialize] WaterGun initialized\n");
+    } else {
+        // 後で初期化される（Update内で）
+        DebugLog("[Player::Initialize] WaterGun created, will initialize later\n");
+    }
 }
 
 //==========================================================
@@ -137,6 +149,15 @@ void Player::UpdateVisualObject() {
 //==========================================================
 void Player::Update(float deltaTime) {
     if (!isAlive) return;
+
+    // ★水鉄砲の遅延初期化（fluidがなければ取得を試みる）
+    if (m_waterGun && !m_waterGun->IsInitialized()) {
+        auto* fluid = GameManager::Instance().GetFluid();
+        if (fluid) {
+            m_waterGun->Initialize(fluid);
+            DebugLog("[Player::Update] WaterGun initialized (delayed)\n");
+        }
+    }
 
     // 前フレームの接地状態を保存
     m_wasGrounded = isGrounded;
@@ -258,6 +279,11 @@ void Player::Update(float deltaTime) {
     // --- 銃の更新 ---
     if (m_gun) {
         m_gun->Update(this, deltaTime);
+    }
+
+    // --- 水鉄砲の更新 ---
+    if (m_waterGun) {
+        m_waterGun->Update(this, deltaTime);
     }
 }
 

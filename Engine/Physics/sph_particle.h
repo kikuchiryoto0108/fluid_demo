@@ -23,6 +23,7 @@ namespace Engine {
         float    density;
         float    pressure;
         float    mass;
+		float lifetime; // 追加: パーティクルの寿命（秒）
 
         SPHParticle()
             : position(0.0f, 0.0f, 0.0f)
@@ -30,7 +31,8 @@ namespace Engine {
             , acceleration(0.0f, 0.0f, 0.0f)
             , density(1000.0f)
             , pressure(0.0f)
-            , mass(1.0f) {
+            , mass(1.0f)
+            , lifetime(3.0f){
         }
     };
 
