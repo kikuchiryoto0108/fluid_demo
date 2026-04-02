@@ -56,8 +56,12 @@ namespace Engine {
         D3D_FEATURE_LEVEL featureLevel;
 
         // --- デバイスとスワップチェーンを作成（まずハードウェアを試す） ---
+        UINT deviceFlags = 0;
+#if defined(DEBUG) || defined(_DEBUG)
+        deviceFlags |= D3D11_CREATE_DEVICE_DEBUG;
+#endif
         hr = D3D11CreateDeviceAndSwapChain(
-            nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, 0,
+            nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, deviceFlags,
             featureLevels, ARRAYSIZE(featureLevels),
             D3D11_SDK_VERSION, &sd,
             &m_pSwapChain, &m_pDevice, &featureLevel, &m_pContext

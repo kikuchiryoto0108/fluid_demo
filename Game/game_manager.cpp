@@ -11,6 +11,8 @@
 #include <iostream>
 #include <Windows.h>
 
+using namespace DirectX;
+
 namespace Game {
 
 #define CLASS_NAME "DX21 Window"
@@ -83,7 +85,7 @@ namespace Game {
 
             m_fluid = std::make_unique<Engine::SPHFluid>();
 
-            if (!m_fluid->Initialize(renderer.GetDevice(), 10000)) {  // 粒子数を増やす
+            if (!m_fluid->Initialize(renderer.GetDevice(), 5000)) {  // 粒子数を増やす
                 OutputDebugStringA("SPHFluid: Initialize failed\n");
                 m_fluid.reset();
             } else {
@@ -100,18 +102,11 @@ namespace Game {
                 m_fluid->SetPlayerCollisionEnabled(true);
 
                 // 色・サイズ設定
-                m_fluid->SetParticleColor(DirectX::XMFLOAT4(0.15f, 0.45f, 0.85f, 0.65f));
-                m_fluid->SetParticleScale(0.05f);
+                m_fluid->SetParticleColor(DirectX::XMFLOAT4(0.3f, 0.7f, 1.0f, 0.6f));  // 明るい水色
+                m_fluid->SetParticleScale(0.02f);
 
                 // スクリーンスペース有効化
                 m_fluid->SetScreenSpaceEnabled(true);
-
-                // 初期粒子は少なめ（水鉄砲から出す）
-                //m_fluid->SpawnParticles(
-                //    DirectX::XMFLOAT3(0.0f, 0.0f, 0.0f),
-                //    100,
-                //    1.0f
-                //);
             }
         }
 
@@ -133,6 +128,34 @@ namespace Game {
         // 流体更新
         if (m_fluid) {
             auto& renderer = Engine::Renderer::GetInstance();
+
+            // プレイヤーのコライダー情報をSPHに渡す
+            std::vector<Engine::SPHFluid::CollisionBox> playerBoxes;
+            SceneGame* sg = m_game.GetSceneGame();
+            if (sg) {
+                // ローカルプレイヤーを取得（SceneGameから全プレイヤーにアクセスできる場合）
+                auto& worldObjects = sg->GetWorldObjects();
+                for (auto& obj : worldObjects) {
+                    if (obj && obj->boxCollider) {
+                        XMFLOAT3 bmin = obj->boxCollider->GetMin();
+                        XMFLOAT3 bmax = obj->boxCollider->GetMax();
+                        Engine::SPHFluid::CollisionBox box;
+                        box.center = {
+                            (bmin.x + bmax.x) * 0.5f,
+                            (bmin.y + bmax.y) * 0.5f,
+                            (bmin.z + bmax.z) * 0.5f
+                        };
+                        box.halfSize = {
+                            (bmax.x - bmin.x) * 0.5f,
+                            (bmax.y - bmin.y) * 0.5f,
+                            (bmax.z - bmin.z) * 0.5f
+                        };
+                        playerBoxes.push_back(box);
+                    }
+                }
+            }
+            m_fluid->SetPlayerColliders(playerBoxes);
+
             m_fluid->Update(renderer.GetContext(), 1.0f / 60.0f);
         }
 
@@ -168,6 +191,17 @@ namespace Game {
         // 流体描画
         if (m_fluid) {
             auto& renderer = Engine::Renderer::GetInstance();
+
+            // ★ ゲームカメラから直接情報を取得
+            Camera& cam = GetMainCamera();
+            XMFLOAT3 camPos = cam.position;
+            XMFLOAT3 camAt = cam.Atposition;
+            XMFLOAT3 camUp = cam.Upvector;
+            float fov = XMConvertToRadians(cam.fov);
+            float aspect = (float)renderer.GetScreenWidth() / (float)renderer.GetScreenHeight();
+
+            m_fluid->SetCamera(camPos, camAt, camUp, fov, aspect, cam.nearclip, cam.farclip);
+
             renderer.SetDepthEnable(true);
             m_fluid->Draw(renderer.GetContext());
         }

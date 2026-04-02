@@ -1,77 +1,78 @@
-//==============================================================================
-// ブラーパス：深度を滑らかにする
-//==============================================================================
-
-Texture2D DepthTexture : register(t0);
-SamplerState PointSampler : register(s0);
-
-cbuffer CBBlur : register(b0) {
-    float2 TexelSize;    // 1.0 / 画面サイズ
-    float BlurScale;     // ブラーの強さ
-    float BlurDepthFalloff;  // 深度差による減衰
+cbuffer CBBlur : register(b0)
+{
+    float2 BlurDir;
+    float  BlurScale;
+    float  BlurDepthFalloff;
+    int    FilterRadius;
+    float3 _pad1;
 };
 
-struct VS_OUTPUT {
-    float4 Position : SV_Position;
-    float2 TexCoord : TEXCOORD;
+Texture2D<float> DepthTex : register(t0);
+SamplerState PointSamp : register(s0);
+
+struct VS_OUT
+{
+    float4 Pos : SV_POSITION;
+    float2 UV  : TEXCOORD0;
 };
 
-// 頂点シェーダー（パススルー）
-VS_OUTPUT VS_Blur(float3 pos : POSITION, float2 uv : TEXCOORD) {
-    VS_OUTPUT output;
-    output.Position = float4(pos, 1.0);
-    output.TexCoord = uv;
-    return output;
+VS_OUT VS_Quad(uint id : SV_VertexID)
+{
+    VS_OUT o;
+    o.UV = float2((id << 1) & 2, id & 2);
+    o.Pos = float4(o.UV * float2(2, -2) + float2(-1, 1), 0, 1);
+    return o;
 }
 
-// バイラテラルブラー（深度を考慮したブラー）
-float4 PS_BlurH(VS_OUTPUT input) : SV_Target {
-    float centerDepth = DepthTexture.Sample(PointSampler, input.TexCoord).r;
+float PS_BilateralBlur(VS_OUT i) : SV_Target0
+{
+    float center = DepthTex.SampleLevel(PointSamp, i.UV, 0);
     
-    if (centerDepth <= 0) return float4(0, 0, 0, 0);
+    // 深度がない場所は0を返す（補間処理を省略）
+    if (center < 0.0001)
+        return 0;
     
-    float sum = 0;
-    float wsum = 0;
+    float sum = center;
+    float wsum = 1.0;
     
-    // 水平方向にサンプリング
-    for (int x = -5; x <= 5; x++) {
-        float2 offset = float2(x * TexelSize.x * BlurScale, 0);
-        float sampleDepth = DepthTexture.Sample(PointSampler, input.TexCoord + offset).r;
+    // ループを固定回数に（-7～7 = 15サンプル）
+    [unroll]
+    for (int x = -7; x <= 7; x++)
+    {
+        if (x == 0) continue;
         
-        if (sampleDepth <= 0) continue;
+        float2 uv = i.UV + BlurDir * float(x) * 2.0;  // 2ピクセル飛ばし
+        float s = DepthTex.SampleLevel(PointSamp, uv, 0);
         
-        // 深度差による重み減衰
-        float depthDiff = abs(centerDepth - sampleDepth);
-        float w = exp(-depthDiff * BlurDepthFalloff) * exp(-x * x / 10.0);
+        if (s < 0.0001) continue;
         
-        sum += sampleDepth * w;
+        // シンプルなガウシアン重み
+        float dist = float(x) * BlurScale;
+        float w = exp(-dist * dist * 0.1);
+        
+        sum += s * w;
         wsum += w;
     }
     
-    return float4(sum / max(wsum, 0.0001), 0, 0, 1);
+    return sum / wsum;
 }
 
-float4 PS_BlurV(VS_OUTPUT input) : SV_Target {
-    float centerDepth = DepthTexture.Sample(PointSampler, input.TexCoord).r;
-    
-    if (centerDepth <= 0) return float4(0, 0, 0, 0);
-    
+float PS_GaussianBlur(VS_OUT i) : SV_Target0
+{
     float sum = 0;
     float wsum = 0;
     
-    // 垂直方向にサンプリング
-    for (int y = -5; y <= 5; y++) {
-        float2 offset = float2(0, y * TexelSize.y * BlurScale);
-        float sampleDepth = DepthTexture.Sample(PointSampler, input.TexCoord + offset).r;
+    [unroll]
+    for (int x = -5; x <= 5; x++)
+    {
+        float2 uv = i.UV + BlurDir * float(x);
+        float s = DepthTex.SampleLevel(PointSamp, uv, 0);
         
-        if (sampleDepth <= 0) continue;
+        float w = exp(-float(x * x) * 0.1);
         
-        float depthDiff = abs(centerDepth - sampleDepth);
-        float w = exp(-depthDiff * BlurDepthFalloff) * exp(-y * y / 10.0);
-        
-        sum += sampleDepth * w;
+        sum += s * w;
         wsum += w;
     }
     
-    return float4(sum / max(wsum, 0.0001), 0, 0, 1);
+    return sum / wsum;
 }

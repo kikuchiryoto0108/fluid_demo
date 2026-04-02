@@ -372,10 +372,13 @@
     <None Include="fluid_blur.hlsl">
       <Filter>シェーダーファイル</Filter>
     </None>
+    <None Include="fluid_depth.hlsl">
+      <Filter>シェーダーファイル</Filter>
+    </None>
     <None Include="fluid_final.hlsl">
       <Filter>シェーダーファイル</Filter>
     </None>
-    <None Include="fluif_depth.hlsl">
+    <None Include="fluid_thickness.hlsl">
       <Filter>シェーダーファイル</Filter>
     </None>
   </ItemGroup>
