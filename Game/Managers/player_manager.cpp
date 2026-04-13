@@ -78,7 +78,7 @@ void PlayerManager::Initialize(Map* map, ID3D11ShaderResourceView* texture) {
 
     // --- 常に両方のプレイヤーを初期化する ---
     if (!player1Initialized) {
-        player1.Initialize(map, m_playerTexture, 1, ViewMode::THIRD_PERSON);
+        player1.Initialize(map, m_playerTexture, 1, ViewMode::FIRST_PERSON);
         player1.SetPosition(XMFLOAT3(0.0f, 3.0f, 0.0f));
         player1Initialized = true;
     }
@@ -115,7 +115,7 @@ void PlayerManager::Update(float deltaTime) {
     HandleInput(deltaTime);
     if (player1Initialized) player1.Update(deltaTime);
     if (player2Initialized) player2.Update(deltaTime);
-    BulletManager::GetInstance().Update(deltaTime);
+    //BulletManager::GetInstance().Update(deltaTime);
 }
 
 //==========================================================
@@ -124,7 +124,7 @@ void PlayerManager::Update(float deltaTime) {
 void PlayerManager::Draw() {
     if (player1Initialized) player1.Draw();
     if (player2Initialized) player2.Draw();
-    BulletManager::GetInstance().Draw();
+    //BulletManager::GetInstance().Draw();
 }
 
 //==========================================================
@@ -194,42 +194,42 @@ void PlayerManager::HandleInput(float deltaTime) {
         activePlayer->Jump();
     }
 
-    // --- 射撃（attackTrigger: 押した瞬間のみtrue） ---
-    if (activePlayer->IsAlive() && cmd.attackTrigger) {
-        // カメラの向きから発射方向を計算（pitch込みで上下にも飛ぶ）
-        CameraManager& cam = CameraManager::GetInstance();
-        float shootYaw = XMConvertToRadians(cam.GetRotation());
-        float shootPitch = XMConvertToRadians(cam.GetPitch());
+    //// --- 射撃（attackTrigger: 押した瞬間のみtrue） ---
+    //if (activePlayer->IsAlive() && cmd.attackTrigger) {
+    //    // カメラの向きから発射方向を計算（pitch込みで上下にも飛ぶ）
+    //    CameraManager& cam = CameraManager::GetInstance();
+    //    float shootYaw = XMConvertToRadians(cam.GetRotation());
+    //    float shootPitch = XMConvertToRadians(cam.GetPitch());
 
-        XMFLOAT3 dir = {
-            sinf(shootYaw) * cosf(shootPitch),
-            sinf(shootPitch),
-            cosf(shootYaw) * cosf(shootPitch)
-        };
+    //    XMFLOAT3 dir = {
+    //        sinf(shootYaw) * cosf(shootPitch),
+    //        sinf(shootPitch),
+    //        cosf(shootYaw) * cosf(shootPitch)
+    //    };
 
-        // 発射位置: プレイヤーの目の高さ + 前方に少しオフセット
-        XMFLOAT3 pos = activePlayer->GetPosition();
-        pos.y += 1.0f;
-        pos.x += dir.x * 0.6f;
-        pos.y += dir.y * 0.6f;
-        pos.z += dir.z * 0.6f;
+    //    // 発射位置: プレイヤーの目の高さ + 前方に少しオフセット
+    //    XMFLOAT3 pos = activePlayer->GetPosition();
+    //    pos.y += 1.0f;
+    //    pos.x += dir.x * 0.6f;
+    //    pos.y += dir.y * 0.6f;
+    //    pos.z += dir.z * 0.6f;
 
-        // 弾を生成（撃ったプレイヤーのIDを渡して自弾判定に使う）
-        auto b = std::make_unique<Bullet>();
-        b->Initialize(GetPolygonTexture(), pos, dir, activePlayer->GetPlayerId());
-        BulletManager::GetInstance().Add(std::move(b));
+    //    // 弾を生成（撃ったプレイヤーのIDを渡して自弾判定に使う）
+    //    auto b = std::make_unique<Bullet>();
+    //    b->Initialize(GetPolygonTexture(), pos, dir, activePlayer->GetPlayerId());
+    //    BulletManager::GetInstance().Add(std::move(b));
 
-        // ネットワーク接続中なら弾の発射情報を送信
-        if (g_network.is_host() || g_network.getMyPlayerId() != 0) {
-            PacketBullet pb = {};
-            pb.type = PKT_BULLET;
-            pb.seq = 0;
-            pb.ownerPlayerId = (uint32_t)activePlayer->GetPlayerId();
-            pb.posX = pos.x; pb.posY = pos.y; pb.posZ = pos.z;
-            pb.dirX = dir.x; pb.dirY = dir.y; pb.dirZ = dir.z;
-            g_network.send_bullet(pb);
-        }
-    }
+    //    // ネットワーク接続中なら弾の発射情報を送信
+    //    if (g_network.is_host() || g_network.getMyPlayerId() != 0) {
+    //        PacketBullet pb = {};
+    //        pb.type = PKT_BULLET;
+    //        pb.seq = 0;
+    //        pb.ownerPlayerId = (uint32_t)activePlayer->GetPlayerId();
+    //        pb.posX = pos.x; pb.posY = pos.y; pb.posZ = pos.z;
+    //        pb.dirX = dir.x; pb.dirY = dir.y; pb.dirZ = dir.z;
+    //        g_network.send_bullet(pb);
+    //    }
+    //}
 
     // --- リスポーン ---
     if (cmd.reloadTrigger) {

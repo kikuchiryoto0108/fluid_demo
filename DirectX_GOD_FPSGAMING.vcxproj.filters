@@ -82,6 +82,12 @@
     <Filter Include="ヘッダー ファイル\external">
       <UniqueIdentifier>{f2a3b4c5-d6e7-8901-fabc-901234567890}</UniqueIdentifier>
     </Filter>
+    <Filter Include="ソース ファイル\Engine\Physics">
+      <UniqueIdentifier>{ca083a58-5726-482b-8855-f29f9e316435}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ヘッダー ファイル\Engine\Physics">
+      <UniqueIdentifier>{5cc2ad28-2d18-4b92-a27b-119197e6d77e}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h">
@@ -171,6 +177,9 @@
     <ClInclude Include="Game\Objects\game_object.h">
       <Filter>ヘッダー ファイル\Game\Objects</Filter>
     </ClInclude>
+    <ClInclude Include="Game\Objects\game_object_base.h">
+      <Filter>ヘッダー ファイル\Game\Objects</Filter>
+    </ClInclude>
     <ClInclude Include="Game\Objects\player.h">
       <Filter>ヘッダー ファイル\Game\Objects</Filter>
     </ClInclude>
@@ -209,6 +218,21 @@
     </ClInclude>
     <ClInclude Include="external\DirectXTex.h">
       <Filter>ヘッダー ファイル\external</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Physics\sph_fluid.h">
+      <Filter>ヘッダー ファイル\Engine\Physics</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Physics\sph_particle.h">
+      <Filter>ヘッダー ファイル\Engine\Physics</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Graphics\fullscreen_quad.h">
+      <Filter>ヘッダー ファイル\Engine\Graphics</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Graphics\render_target.h">
+      <Filter>ヘッダー ファイル\Engine\Graphics</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\Objects\water_gun.h">
+      <Filter>ヘッダー ファイル\Game\Objects</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -281,6 +305,9 @@
     <ClCompile Include="Game\Objects\game_object.cpp">
       <Filter>ソース ファイル\Game\Objects</Filter>
     </ClCompile>
+    <ClCompile Include="Game\Objects\game_object_base.cpp">
+      <Filter>ソース ファイル\Game\Objects</Filter>
+    </ClCompile>
     <ClCompile Include="Game\Objects\player.cpp">
       <Filter>ソース ファイル\Game\Objects</Filter>
     </ClCompile>
@@ -314,6 +341,18 @@
     <ClCompile Include="external\WICTextureLoader11.cpp">
       <Filter>ソース ファイル\external</Filter>
     </ClCompile>
+    <ClCompile Include="Engine\Physics\sph_fluid.cpp">
+      <Filter>ソース ファイル\Engine\Physics</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Graphics\render_target.cpp">
+      <Filter>ソース ファイル\Engine\Graphics</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Graphics\fullscreen_quad.cpp">
+      <Filter>ソース ファイル\Engine\Graphics</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\Objects\water_gun.cpp">
+      <Filter>ソース ファイル\Game\Objects</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Text Include="x64\Release\netWorkLog.txt">
@@ -325,6 +364,21 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="shader.hlsl">
+      <Filter>シェーダーファイル</Filter>
+    </None>
+    <None Include="fluid_blur.hlsl">
+      <Filter>シェーダーファイル</Filter>
+    </None>
+    <None Include="fluid_depth.hlsl">
+      <Filter>シェーダーファイル</Filter>
+    </None>
+    <None Include="fluid_final.hlsl">
+      <Filter>シェーダーファイル</Filter>
+    </None>
+    <None Include="fluid_thickness.hlsl">
+      <Filter>シェーダーファイル</Filter>
+    </None>
+    <None Include="sph_compute_shader.hlsl">
       <Filter>シェーダーファイル</Filter>
     </None>
   </ItemGroup>

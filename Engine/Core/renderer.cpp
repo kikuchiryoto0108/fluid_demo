@@ -56,8 +56,12 @@ namespace Engine {
         D3D_FEATURE_LEVEL featureLevel;
 
         // --- デバイスとスワップチェーンを作成（まずハードウェアを試す） ---
+        UINT deviceFlags = 0;
+#if defined(DEBUG) || defined(_DEBUG)
+        deviceFlags |= D3D11_CREATE_DEVICE_DEBUG;
+#endif
         hr = D3D11CreateDeviceAndSwapChain(
-            nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, 0,
+            nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, deviceFlags,
             featureLevels, ARRAYSIZE(featureLevels),
             D3D11_SDK_VERSION, &sd,
             &m_pSwapChain, &m_pDevice, &featureLevel, &m_pContext
@@ -217,6 +221,24 @@ namespace Engine {
         m_pDevice->CreateBuffer(&cbDesc, nullptr, &m_pMaterialBuffer);
         ID3D11Buffer* mb = m_pMaterialBuffer.Get();
         m_pContext->VSSetConstantBuffers(1, 1, &mb);
+
+        // マテリアルバッファを白で初期化
+        struct {
+            XMFLOAT4 diffuse;
+            XMFLOAT4 ambient;
+            XMFLOAT4 specular;
+            XMFLOAT4 emission;
+            float    shininess;
+            float    padding[3];
+        } initialMaterial = {
+            {1.0f, 1.0f, 1.0f, 1.0f},  // diffuse
+            {1.0f, 1.0f, 1.0f, 1.0f},  // ambient
+            {0.0f, 0.0f, 0.0f, 1.0f},  // specular
+            {0.0f, 0.0f, 0.0f, 1.0f},  // emission
+            0.0f,                       // shininess
+            {0.0f, 0.0f, 0.0f}         // padding
+        };
+        m_pContext->UpdateSubresource(m_pMaterialBuffer.Get(), 0, nullptr, &initialMaterial, 0, 0);
 
         // --- シェーダーと入力レイアウトをパイプラインにセット ---
         m_pContext->IASetInputLayout(m_pInputLayout.Get());

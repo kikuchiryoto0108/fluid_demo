@@ -20,6 +20,7 @@
 #include "Game/Map/map_renderer.h"
 #include "Game/Objects/player.h"
 #include "Game/Managers/player_manager.h"
+#include "Game/Managers/bullet_manager.h"
 #include "Game/Objects/camera.h"
 #include "NetWork/network_manager.h"
 #include "Game/Objects/bullet.h"
@@ -48,204 +49,196 @@ std::shared_ptr<T> MakeNonOwning(T* ptr) {
 //==========================================================
 // SceneGame 実装
 //==========================================================
-    SceneGame::SceneGame() {
-        m_sceneType = SceneType::GAME;
+SceneGame::SceneGame() {
+    m_sceneType = SceneType::GAME;
+}
+
+SceneGame::~SceneGame() {
+}
+
+HRESULT SceneGame::Initialize() {
+    // --- マップ初期化 ---
+    m_pMap = new Map();
+    if (m_pMap) {
+        m_pMap->Initialize(Engine::GetDefaultTexture());
+    }
+    m_pMapRenderer = new MapRenderer();
+    if (m_pMapRenderer) {
+        m_pMapRenderer->Initialize(m_pMap);
     }
 
-    SceneGame::~SceneGame() {
+    // --- ホスト/クライアント選択ダイアログ ---
+    HWND hWnd = FindWindowA(CLASS_NAME, nullptr);
+    int msgRes = MessageBox(hWnd,
+        "Yes = HOST (Player1, TPS)\nNo = CLIENT (Player2, FPS)",
+        "Select Role", MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON1);
+    bool isHost = (msgRes == IDYES);
+
+    PlayerManager::GetInstance().SetInitialActivePlayer(isHost ? 1 : 2);
+
+    // --- 両方のプレイヤーを初期化 ---
+    InitializePlayers(m_pMap, Engine::GetDefaultTexture());
+
+    // --- カメラ初期化 ---
+    InitializeCameraSystem();
+
+    // --- ワールドオブジェクトにマップブロックを登録 ---
+    m_worldObjects.clear();
+    if (m_pMap) {
+        const auto& blocks = m_pMap->GetBlockObjects();
+        for (const auto& sp : blocks) {
+            m_worldObjects.push_back(sp);
+        }
     }
 
-    HRESULT SceneGame::Initialize() {
-        // --- マップ初期化 ---
-        m_pMap = new Map();
-        if (m_pMap) {
-            m_pMap->Initialize(Engine::GetDefaultTexture());
+    // --- 衝突システム初期化 ---
+    Engine::CollisionSystem::GetInstance().Initialize();
+    Engine::MapCollision::GetInstance().Initialize(2.0f);
+    if (m_pMap) {
+        const auto& blocks = m_pMap->GetBlockObjects();
+        for (const auto& block : blocks) {
+            Engine::MapCollision::GetInstance().RegisterBlock(block->GetBoxCollider());
         }
-        m_pMapRenderer = new MapRenderer();
-        if (m_pMapRenderer) {
-            m_pMapRenderer->Initialize(m_pMap);
-        }
+    }
 
-        // --- ホスト/クライアント選択ダイアログ ---
-        HWND hWnd = FindWindowA(CLASS_NAME, nullptr);
-        int msgRes = MessageBox(hWnd,
-            "Yes = HOST (Player1, TPS)\nNo = CLIENT (Player2, FPS)",
-            "Select Role", MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON1);
-        bool isHost = (msgRes == IDYES);
-
-        // ホスト→Player1操作, クライアント→Player2操作
-        PlayerManager::GetInstance().SetInitialActivePlayer(isHost ? 1 : 2);
-
-        // --- 両方のプレイヤーを初期化（衝突システム登録のため必須） ---
-        InitializePlayers(m_pMap, Engine::GetDefaultTexture());
-
-        // --- カメラ初期化 ---
-        InitializeCameraSystem();
-
-        // --- ワールドオブジェクトにマップブロックを登録 ---
-        m_worldObjects.clear();
-        if (m_pMap) {
-            const auto& blocks = m_pMap->GetBlockObjects();
-            for (const auto& sp : blocks) {
-                m_worldObjects.push_back(sp);
-            }
-        }
-
-        // --- 衝突システム初期化 ---
-        Engine::CollisionSystem::GetInstance().Initialize();
-        Engine::MapCollision::GetInstance().Initialize(2.0f);
-        if (m_pMap) {
-            const auto& blocks = m_pMap->GetBlockObjects();
-            for (const auto& block : blocks) {
-                Engine::MapCollision::GetInstance().RegisterBlock(block->GetBoxCollider());
-            }
-        }
-
-        // --- 衝突コールバック設定 ---
-        Engine::CollisionSystem::GetInstance().SetCallback(
-            [](const Engine::CollisionHit& hit) {
-                // 弾とプレイヤーの衝突処理
-                Bullet* bullet = nullptr;
-                Player* player = nullptr;
-                if (Engine::HasFlag(hit.dataA->layer, Engine::CollisionLayer::PROJECTILE))
-                    bullet = static_cast<Bullet*>(hit.dataA->userData);
-                if (Engine::HasFlag(hit.dataB->layer, Engine::CollisionLayer::PROJECTILE))
-                    bullet = static_cast<Bullet*>(hit.dataB->userData);
-                if (Engine::HasFlag(hit.dataA->layer, Engine::CollisionLayer::PLAYER))
-                    player = static_cast<Player*>(hit.dataA->userData);
-                if (Engine::HasFlag(hit.dataB->layer, Engine::CollisionLayer::PLAYER))
-                    player = static_cast<Player*>(hit.dataB->userData);
-                if (bullet && player && bullet->active && player->IsAlive()) {
-                    if (bullet->ownerPlayerId == player->GetPlayerId()) return;
-                    bullet->Deactivate();
-                    player->TakeDamage(1);
-                    std::cout << "[Hit!] Player " << player->GetPlayerId()
-                        << " HP=" << player->GetHP() << "/" << player->GetMaxHP() << "\n";
-                    if (!player->IsAlive()) {
-                        std::cout << "[Kill!] Player " << player->GetPlayerId() << " eliminated!\n";
-                    }
-                }
-            }
-        );
-
-        // --- ネットワーク起動 ---
-        if (isHost) {
-            if (g_network.start_as_host()) {
-                std::cout << "[SceneGame] HOST started - waiting for client...\n";
-            }
-        } else {
-            if (g_network.start_as_client()) {
-                std::string hostIp;
-                if (g_network.discover_and_join(hostIp)) {
-                    std::cout << "[SceneGame] CLIENT connected to " << hostIp << "\n";
-                } else {
-                    std::cout << "[SceneGame] CLIENT: host not found\n";
+    // --- 衝突コールバック設定 ---
+    Engine::CollisionSystem::GetInstance().SetCallback(
+        [](const Engine::CollisionHit& hit) {
+            Bullet* bullet = nullptr;
+            Player* player = nullptr;
+            if (Engine::HasFlag(hit.dataA->layer, Engine::CollisionLayer::PROJECTILE))
+                bullet = static_cast<Bullet*>(hit.dataA->userData);
+            if (Engine::HasFlag(hit.dataB->layer, Engine::CollisionLayer::PROJECTILE))
+                bullet = static_cast<Bullet*>(hit.dataB->userData);
+            if (Engine::HasFlag(hit.dataA->layer, Engine::CollisionLayer::PLAYER))
+                player = static_cast<Player*>(hit.dataA->userData);
+            if (Engine::HasFlag(hit.dataB->layer, Engine::CollisionLayer::PLAYER))
+                player = static_cast<Player*>(hit.dataB->userData);
+            if (bullet && player && bullet->IsActive() && player->IsAlive()) {
+                if (bullet->ownerPlayerId == player->GetPlayerId()) return;
+                bullet->Deactivate();
+                player->TakeDamage(1);
+                std::cout << "[Hit!] Player " << player->GetPlayerId()
+                    << " HP=" << player->GetHP() << "/" << player->GetMaxHP() << "\n";
+                if (!player->IsAlive()) {
+                    std::cout << "[Kill!] Player " << player->GetPlayerId() << " eliminated!\n";
                 }
             }
         }
+    );
 
-        // --- ローカルプレイヤーのID設定 ---
-        GameObject* localGo = GetLocalPlayerGameObject();
-        if (localGo) {
-            localGo->setId(isHost ? 1 : 2);
-            m_worldObjects.push_back(MakeNonOwning(localGo));
+    // --- ネットワーク起動 ---
+    if (isHost) {
+        if (g_network.start_as_host()) {
+            std::cout << "[SceneGame] HOST started - waiting for client...\n";
         }
-
-        // --- 相手プレイヤーのGameObjectもworldObjectsに登録 ---
-        Player* otherPlayer = PlayerManager::GetInstance().GetPlayer(isHost ? 2 : 1);
-        if (otherPlayer) {
-            GameObject* otherGo = otherPlayer->GetGameObject();
-            if (otherGo) {
-                otherGo->setId(isHost ? 2 : 1);
-                m_worldObjects.push_back(MakeNonOwning(otherGo));
+    } else {
+        if (g_network.start_as_client()) {
+            std::string hostIp;
+            if (g_network.discover_and_join(hostIp)) {
+                std::cout << "[SceneGame] CLIENT connected to " << hostIp << "\n";
+            } else {
+                std::cout << "[SceneGame] CLIENT: host not found\n";
             }
         }
-
-        return S_OK;
     }
 
-
-
-    void SceneGame::Finalize() {
-        if (m_pMapRenderer) {
-            m_pMapRenderer->Uninitialize();
-            delete m_pMapRenderer;
-            m_pMapRenderer = nullptr;
-        }
-
-        m_worldObjects.clear();
-
-        if (m_pMap) {
-            m_pMap->Uninitialize();
-            delete m_pMap;
-            m_pMap = nullptr;
-        }
-
-        Engine::CollisionSystem::GetInstance().Shutdown();
-        Engine::MapCollision::GetInstance().Shutdown();
+    // --- ローカルプレイヤーのID設定 ---
+    GameObject* localGo = GetLocalPlayerGameObject();
+    if (localGo) {
+        localGo->setId(isHost ? 1 : 2);
+        m_worldObjects.push_back(MakeNonOwning(localGo));
     }
 
-    void SceneGame::Update() {
-        static int frameCounter = 0;
-        frameCounter++;
-
-        // --- ネットワーク更新 ---
-        GameObject* localGo = GetLocalPlayerGameObject();
-        constexpr float fixedDt = 1.0f / 60.0f;
-        g_network.update(fixedDt, localGo, m_worldObjects);
-
-        // --- ネットワーク補間（ローカル以外） ---
-        int localId = 0;
-        if (localGo) localId = (int)localGo->getId();
-
-        for (const auto& go : m_worldObjects) {
-            if (!go) continue;
-            int goId = (int)go->getId();
-
-            // 自分自身は絶対にスキップ
-            if (goId == localId && localId != 0) continue;
-
-            // プレイヤー（ID 1 or 2）だけ補間する
-            if (goId != 1 && goId != 2) continue;
-
-            // ネットワークターゲットがある場合のみ更新
-            if (go->hasNetworkTarget()) {
-                go->updateNetworkInterpolation(0.2f);
-
-                bool isAlive = go->getNetworkAlive();
-                PlayerManager::GetInstance().ForceUpdatePlayer(
-                    goId, go->getPosition(), go->getRotation(), isAlive);
-            }
+    // --- 相手プレイヤーのGameObjectもworldObjectsに登録 ---
+    Player* otherPlayer = PlayerManager::GetInstance().GetPlayer(isHost ? 2 : 1);
+    if (otherPlayer) {
+        GameObject* otherGo = otherPlayer->GetGameObject();
+        if (otherGo) {
+            otherGo->setId(isHost ? 2 : 1);
+            m_worldObjects.push_back(MakeNonOwning(otherGo));
         }
-
-        // --- フレーム同期（3フレームごと） ---
-        if (frameCounter % 3 == 0) {
-            bool isNetworkActive = g_network.is_host() || g_network.getMyPlayerId() != 0;
-            if (isNetworkActive) {
-                g_network.FrameSync(localGo, m_worldObjects);
-            }
-        }
-
-        // --- ゲームロジック更新 ---
-        UpdateCameraSystem();
-        UpdatePlayer();
-        Engine::CollisionSystem::GetInstance().Update();
     }
 
+    return S_OK;
+}
 
+void SceneGame::Finalize() {
+    // BulletManagerから壁の登録を解除
+    BulletManager::GetInstance().ClearWalls();
 
-
-    void SceneGame::Draw() {
-        // --- 3D描画 ---
-        if (m_pMapRenderer) {
-            m_pMapRenderer->Draw();
-        }
-
-        DrawPlayers();
-
-        // --- 2D UI描画: HP表示（画面左上） ---
-        DrawHPDisplay();
+    if (m_pMapRenderer) {
+        m_pMapRenderer->Uninitialize();
+        delete m_pMapRenderer;
+        m_pMapRenderer = nullptr;
     }
+
+    m_worldObjects.clear();
+
+    if (m_pMap) {
+        m_pMap->Uninitialize();
+        delete m_pMap;
+        m_pMap = nullptr;
+    }
+
+    Engine::CollisionSystem::GetInstance().Shutdown();
+    Engine::MapCollision::GetInstance().Shutdown();
+}
+
+void SceneGame::Update() {
+    static int frameCounter = 0;
+    frameCounter++;
+
+    // --- ネットワーク更新 ---
+    GameObject* localGo = GetLocalPlayerGameObject();
+    constexpr float fixedDt = 1.0f / 60.0f;
+    g_network.update(fixedDt, localGo, m_worldObjects);
+
+    // --- ネットワーク補間（ローカル以外） ---
+    int localId = 0;
+    if (localGo) localId = (int)localGo->getId();
+
+    for (const auto& go : m_worldObjects) {
+        if (!go) continue;
+        int goId = (int)go->getId();
+
+        if (goId == localId && localId != 0) continue;
+        if (goId != 1 && goId != 2) continue;
+
+        if (go->hasNetworkTarget()) {
+            go->updateNetworkInterpolation(0.2f);
+
+            bool isAlive = go->getNetworkAlive();
+            PlayerManager::GetInstance().ForceUpdatePlayer(
+                goId, go->getPosition(), go->getRotation(), isAlive);
+        }
+    }
+
+    // --- フレーム同期（3フレームごと） ---
+    if (frameCounter % 3 == 0) {
+        bool isNetworkActive = g_network.is_host() || g_network.getMyPlayerId() != 0;
+        if (isNetworkActive) {
+            g_network.FrameSync(localGo, m_worldObjects);
+        }
+    }
+
+    // --- ゲームロジック更新 ---
+    UpdateCameraSystem();
+    UpdatePlayer();
+    Engine::CollisionSystem::GetInstance().Update();
+}
+
+void SceneGame::Draw() {
+    // --- 3D描画 ---
+    if (m_pMapRenderer) {
+        m_pMapRenderer->Draw();
+    }
+
+    DrawPlayers();
+
+    // --- 2D UI描画 ---
+    DrawHPDisplay();
+}
 
 //==========================================================
 // DrawHPDisplay - 画面左上にHPバーとテキストを描画

@@ -16,6 +16,7 @@
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
+#include <unordered_map>
 
 #pragma comment(lib, "assimp-vc143-mt.lib")
 
@@ -348,30 +349,35 @@ namespace Engine {
 
         DebugLog("[MeshFactory::CreateAllFromFile] SUCCESS: Loaded %d mesh(es)\n", (int)meshes.size());
         return meshes;
-    }
+    }    // テクスチャパスのキャッシュ（同じマテリアルの重複検索を防ぐ）
+    static std::unordered_map<unsigned int, std::string> s_texturePathCache;
 
     //==========================================================
-    // マテリアルからディフューズテクスチャパスを取得（フォールバック対応）
+    // マテリアルからディフューズテクスチャパスを取得（キャッシュ対応版）
     //==========================================================
-    static std::string GetDiffuseTexturePath(const aiScene* scene, unsigned int materialIndex, 
-                                              const std::string& basePath, const std::string& modelFileName) {
-        DebugLog("[GetDiffuseTexturePath] materialIndex=%d, basePath='%s', modelFileName='%s'\n", 
-                 materialIndex, basePath.c_str(), modelFileName.c_str());
-        
+    static std::string GetDiffuseTexturePath(const aiScene* scene, unsigned int materialIndex,
+        const std::string& basePath, const std::string& modelFileName) {
+        // キャッシュチェック
+        auto it = s_texturePathCache.find(materialIndex);
+        if (it != s_texturePathCache.end()) {
+            return it->second;
+        }
+
+        DebugLog("[GetDiffuseTexturePath] materialIndex=%d (first lookup)\n", materialIndex);
+
         if (materialIndex >= scene->mNumMaterials) {
-            DebugLog("[GetDiffuseTexturePath] FAILED: materialIndex out of range\n");
+            s_texturePathCache[materialIndex] = "";
             return "";
         }
 
         aiMaterial* material = scene->mMaterials[materialIndex];
         std::string texPathStr;
-        
+
         // ディフューズテクスチャを試行
         if (material->GetTextureCount(aiTextureType_DIFFUSE) > 0) {
             aiString texPath;
             if (material->GetTexture(aiTextureType_DIFFUSE, 0, &texPath) == AI_SUCCESS) {
                 texPathStr = texPath.C_Str();
-                DebugLog("[GetDiffuseTexturePath] Found DIFFUSE texture in material: %s\n", texPathStr.c_str());
             }
         }
 
@@ -380,85 +386,88 @@ namespace Engine {
             aiString texPath;
             if (material->GetTexture(aiTextureType_BASE_COLOR, 0, &texPath) == AI_SUCCESS) {
                 texPathStr = texPath.C_Str();
-                DebugLog("[GetDiffuseTexturePath] Found BASE_COLOR texture in material: %s\n", texPathStr.c_str());
             }
         }
 
-        // テクスチャパスが見つかった場合、存在確認と検索
+        std::string result;
+
+        // テクスチャパスが見つかった場合
         if (!texPathStr.empty()) {
-            // バックスラッシュをスラッシュに変換
             for (char& c : texPathStr) {
                 if (c == '\\') c = '/';
             }
 
-            // 絶対パスの場合そのまま
+            // 絶対パスチェック
             if (!texPathStr.empty() && (texPathStr[0] == '/' || texPathStr.find(':') != std::string::npos)) {
                 if (FileExists(texPathStr)) {
-                    DebugLog("[GetDiffuseTexturePath] Found absolute path texture: %s\n", texPathStr.c_str());
-                    return texPathStr;
+                    result = texPathStr;
                 }
             }
 
-            // 相対パスの場合、複数の場所を検索
-            std::vector<std::string> searchPaths;
-            searchPaths.reserve(6);
-            
-            // ファイル名部分のみを取得
-            size_t lastSlash = texPathStr.find_last_of('/');
-            std::string texFileName = (lastSlash != std::string::npos) ? texPathStr.substr(lastSlash + 1) : texPathStr;
+            if (result.empty()) {
+                size_t lastSlash = texPathStr.find_last_of('/');
+                std::string texFileName = (lastSlash != std::string::npos) ? texPathStr.substr(lastSlash + 1) : texPathStr;
 
-            // 検索パスリスト
-            searchPaths.push_back(basePath + texPathStr);                    // そのまま
-            searchPaths.push_back(basePath + texFileName);                    // ベースパス直下
-            searchPaths.push_back(basePath + "textures/" + texFileName);      // textures/フォルダ
-            searchPaths.push_back(basePath + "Textures/" + texFileName);      // Textures/フォルダ
-            searchPaths.push_back(basePath + "texture/" + texFileName);       // texture/フォルダ
-            searchPaths.push_back(basePath + "Texture/" + texFileName);       // Texture/フォルダ
+                // 検索パス（優先順位順）
+                const char* searchFolders[] = { "", "textures/", "Textures/", "texture/", "Texture/" };
 
-            for (const auto& path : searchPaths) {
-                DebugLog("[GetDiffuseTexturePath] Searching: %s\n", path.c_str());
-                if (FileExists(path)) {
-                    DebugLog("[GetDiffuseTexturePath] FOUND texture: %s\n", path.c_str());
-                    return path;
-                }
-            }
-        }
-
-        // テクスチャが見つからない場合、モデル名から推測して検索
-        // 例: M1911.FBX -> M1911_Albedo.png, M1911_Diffuse.png など
-        DebugLog("[GetDiffuseTexturePath] Trying fallback search with model name: %s\n", modelFileName.c_str());
-        static const std::vector<std::string> suffixes = { "_Albedo", "_albedo", "_Diffuse", "_diffuse", "_BaseColor", "_basecolor", "_Color", "_color", "" };
-        static const std::vector<std::string> extensions = { ".png", ".PNG", ".jpg", ".JPG", ".jpeg", ".JPEG", ".tga", ".TGA", ".bmp", ".BMP" };
-        static const std::vector<std::string> folders = { "", "textures/", "Textures/", "texture/", "Texture/" };
-
-        for (const auto& folder : folders) {
-            for (const auto& suffix : suffixes) {
-                for (const auto& ext : extensions) {
-                    std::string candidate = basePath + folder + modelFileName + suffix + ext;
-                    if (FileExists(candidate)) {
-                        DebugLog("[GetDiffuseTexturePath] FOUND fallback texture: %s\n", candidate.c_str());
-                        return candidate;
+                for (const char* folder : searchFolders) {
+                    std::string path = basePath + folder + texFileName;
+                    if (FileExists(path)) {
+                        result = path;
+                        break;
                     }
                 }
             }
         }
 
-        DebugLog("[GetDiffuseTexturePath] No texture found for material %d\n", materialIndex);
-        return "";
+        // フォールバック検索（テクスチャが見つからない場合のみ）
+        if (result.empty()) {
+            static const char* suffixes[] = { "_Albedo", "_albedo", "_Diffuse", "_diffuse", "_BaseColor", "_basecolor", "" };
+            static const char* extensions[] = { ".png", ".jpg", ".tga", ".bmp" };
+            static const char* folders[] = { "", "textures/", "Textures/" };
+
+            bool found = false;
+            for (const char* folder : folders) {
+                if (found) break;
+                for (const char* suffix : suffixes) {
+                    if (found) break;
+                    for (const char* ext : extensions) {
+                        std::string candidate = basePath + folder + modelFileName + suffix + ext;
+                        if (FileExists(candidate)) {
+                            result = candidate;
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        // キャッシュに保存
+        s_texturePathCache[materialIndex] = result;
+
+        if (result.empty()) {
+            DebugLog("[GetDiffuseTexturePath] No texture found for material %d\n", materialIndex);
+        } else {
+            DebugLog("[GetDiffuseTexturePath] Found: %s\n", result.c_str());
+        }
+
+        return result;
     }
 
     //==========================================================
-    // LoadModelData - モデルデータ読み込み（メッシュ + テクスチャパス）
+    // LoadModelData - キャッシュクリア付き
     //==========================================================
     ModelData MeshFactory::LoadModelData(const std::string& filePath) {
         DebugLog("[MeshFactory::LoadModelData] Loading: %s\n", filePath.c_str());
-        
+
+        // 新しいモデル読み込み時にキャッシュをクリア
+        s_texturePathCache.clear();
+
         ModelData modelData;
         modelData.basePath = GetBasePath(filePath);
         std::string modelFileName = GetFileNameWithoutExtension(filePath);
-
-        DebugLog("[MeshFactory::LoadModelData] basePath='%s', modelFileName='%s'\n", 
-                 modelData.basePath.c_str(), modelFileName.c_str());
 
         Assimp::Importer importer;
 
@@ -471,39 +480,36 @@ namespace Engine {
         );
 
         if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode) {
-            DebugLog("[MeshFactory::LoadModelData] FAILED to load scene: %s\n", importer.GetErrorString());
+            DebugLog("[MeshFactory::LoadModelData] FAILED: %s\n", importer.GetErrorString());
             return modelData;
         }
 
-        DebugLog("[MeshFactory::LoadModelData] Scene loaded: %d meshes, %d materials\n", 
-                 scene->mNumMeshes, scene->mNumMaterials);
+        DebugLog("[MeshFactory::LoadModelData] Scene: %d meshes, %d materials\n",
+            scene->mNumMeshes, scene->mNumMaterials);
 
         modelData.subMeshes.reserve(scene->mNumMeshes);
 
         for (unsigned int i = 0; i < scene->mNumMeshes; i++) {
             SubMeshData subMesh;
             subMesh.mesh = ConvertAiMesh(scene->mMeshes[i]);
-            
+
             if (subMesh.mesh) {
-                // マテリアルインデックスからテクスチャパスを取得
                 unsigned int materialIndex = scene->mMeshes[i]->mMaterialIndex;
-                DebugLog("[MeshFactory::LoadModelData] Mesh[%d] materialIndex=%d\n", i, materialIndex);
                 subMesh.diffuseTexturePath = GetDiffuseTexturePath(scene, materialIndex, modelData.basePath, modelFileName);
-                DebugLog("[MeshFactory::LoadModelData] Mesh[%d] texturePath='%s'\n", i, subMesh.diffuseTexturePath.c_str());
                 modelData.subMeshes.push_back(std::move(subMesh));
             }
         }
 
-        DebugLog("[MeshFactory::LoadModelData] SUCCESS: %d subMeshes loaded\n", (int)modelData.subMeshes.size());
+        DebugLog("[MeshFactory::LoadModelData] SUCCESS: %d subMeshes\n", (int)modelData.subMeshes.size());
         return modelData;
     }
 
     //==========================================================
-    // LoadModelWithTextures - モデル読み込み（テクスチャも同時読み込み）
+    // LoadModelWithTextures - 修正版
     //==========================================================
     ModelData MeshFactory::LoadModelWithTextures(const std::string& filePath, ID3D11Device* pDevice) {
         DebugLog("[MeshFactory::LoadModelWithTextures] START: %s\n", filePath.c_str());
-        
+
         ModelData modelData = LoadModelData(filePath);
 
         if (!pDevice) {
@@ -511,35 +517,36 @@ namespace Engine {
             return modelData;
         }
 
-        DebugLog("[MeshFactory::LoadModelWithTextures] Loading textures for %d subMeshes\n", (int)modelData.subMeshes.size());
+        // デフォルトの白テクスチャを1回だけ作成
+        ID3D11ShaderResourceView* defaultWhite = nullptr;
 
-        // テクスチャを読み込む
         for (size_t i = 0; i < modelData.subMeshes.size(); i++) {
             auto& subMesh = modelData.subMeshes[i];
+
             if (!subMesh.diffuseTexturePath.empty()) {
-                DebugLog("[MeshFactory::LoadModelWithTextures] SubMesh[%d] Loading texture: %s\n", 
-                         (int)i, subMesh.diffuseTexturePath.c_str());
+                // テクスチャパスがある場合は読み込み
                 std::wstring wPath = StringToWString(subMesh.diffuseTexturePath);
                 subMesh.texture = TextureLoader::Load(pDevice, wPath);
-                if (subMesh.texture) {
-                    subMesh.mesh->SetTexture(subMesh.texture);
-                    DebugLog("[MeshFactory::LoadModelWithTextures] SubMesh[%d] Texture loaded OK\n", (int)i);
-                } else {
-                    DebugLog("[MeshFactory::LoadModelWithTextures] SubMesh[%d] Texture load FAILED (using white fallback)\n", (int)i);
-                }
             } else {
-                DebugLog("[MeshFactory::LoadModelWithTextures] SubMesh[%d] No texture path\n", (int)i);
+                // テクスチャパスがない場合は白テクスチャを使用
+                if (!defaultWhite) {
+                    defaultWhite = TextureLoader::CreateWhite(pDevice);
+                    DebugLog("[MeshFactory::LoadModelWithTextures] Created default white texture\n");
+                }
+                subMesh.texture = defaultWhite;
             }
-            
+
+            if (subMesh.texture && subMesh.mesh) {
+                subMesh.mesh->SetTexture(subMesh.texture);
+            }
+
             // メッシュをGPUにアップロード
             if (subMesh.mesh) {
-                bool uploadResult = subMesh.mesh->Upload(pDevice);
-                DebugLog("[MeshFactory::LoadModelWithTextures] SubMesh[%d] Mesh upload: %s\n", 
-                         (int)i, uploadResult ? "OK" : "FAILED");
+                subMesh.mesh->Upload(pDevice);
             }
         }
 
-        DebugLog("[MeshFactory::LoadModelWithTextures] COMPLETE\n");
+        DebugLog("[MeshFactory::LoadModelWithTextures] COMPLETE: %d subMeshes\n", (int)modelData.subMeshes.size());
         return modelData;
     }
 }

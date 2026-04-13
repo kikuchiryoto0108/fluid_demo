@@ -19,7 +19,12 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Engine\Graphics\fullscreen_quad.h" />
+    <ClInclude Include="Engine\Graphics\render_target.h" />
+    <ClInclude Include="Engine\Physics\sph_fluid.h" />
+    <ClInclude Include="Engine\Physics\sph_particle.h" />
     <ClInclude Include="external\DirectXTex.h" />
+    <ClInclude Include="Game\Objects\water_gun.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="main.h" />
     <ClInclude Include="Engine\Core\renderer.h" />
@@ -49,6 +54,7 @@
     <ClInclude Include="Game\game.h" />
     <ClInclude Include="Game\game_manager.h" />
     <ClInclude Include="Game\Objects\game_object.h" />
+    <ClInclude Include="Game\Objects\game_object_base.h" />
     <ClInclude Include="Game\Objects\player.h" />
     <ClInclude Include="Game\Objects\bullet.h" />
     <ClInclude Include="Game\Objects\camera.h" />
@@ -63,6 +69,10 @@
     <ClInclude Include="external\WICTextureLoader11.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="Engine\Graphics\fullscreen_quad.cpp" />
+    <ClCompile Include="Engine\Graphics\render_target.cpp" />
+    <ClCompile Include="Engine\Physics\sph_fluid.cpp" />
+    <ClCompile Include="Game\Objects\water_gun.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Create</PrecompiledHeader>
@@ -91,6 +101,7 @@
     <ClCompile Include="Game\game.cpp" />
     <ClCompile Include="Game\game_manager.cpp" />
     <ClCompile Include="Game\Objects\game_object.cpp" />
+    <ClCompile Include="Game\Objects\game_object_base.cpp" />
     <ClCompile Include="Game\Objects\player.cpp" />
     <ClCompile Include="Game\Objects\bullet.cpp" />
     <ClCompile Include="Game\Objects\camera.cpp" />
@@ -116,6 +127,37 @@
     <None Include="shader.hlsl">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
       <FileType>Document</FileType>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="fluid_blur.hlsl">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <FileType>Document</FileType>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="fluid_depth.hlsl">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <FileType>Document</FileType>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </None>
+    <None Include="fluid_final.hlsl">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <FileType>Document</FileType>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </None>
+    <None Include="fluid_thickness.hlsl">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <FileType>Document</FileType>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="sph_compute_shader.hlsl">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <FileType>Document</FileType>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </None>
   </ItemGroup>
   <PropertyGroup Label="Globals">

@@ -73,6 +73,9 @@ namespace Engine {
 		// whiteテクスチャを取得する（矩形描画でテクスチャ乗算を無効化するため）
         ID3D11ShaderResourceView* GetWhiteTexture() const { return m_pWhiteSRV.Get(); }
 
+        const XMMATRIX& GetViewMatrix() const { return m_viewMatrix; }
+        const XMMATRIX& GetProjectionMatrix() const { return m_projectionMatrix; }
+
     private:
         Renderer() = default;
         ~Renderer() = default;

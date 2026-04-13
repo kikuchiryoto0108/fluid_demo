@@ -1,157 +1,217 @@
 //==============================================================================
 //  File   : game_manager.cpp
-//  Brief  : ゲームマネージャー - ゲーム全体の初期化・更新・描画管理
-// 
-//  Author : Ryoto Kikuchi
-//  Date   : 2026/3/12
-//------------------------------------------------------------------------------
-//
 //==============================================================================
 #include "pch.h"
 #include "game_manager.h"
 #include "Engine/Core/renderer.h"
 #include "Engine/Core/timer.h"
+#include "Engine/Physics/sph_fluid.h"
 #include "Game/Objects/game_object.h"
 #include "Game/Objects/camera.h"
 #include <iostream>
 #include <Windows.h>
 
+using namespace DirectX;
+
 namespace Game {
 
-//==========================================================
-// マクロ定義
-//==========================================================
-#define		CLASS_NAME		"DX21 Window"
+#define CLASS_NAME "DX21 Window"
 
-//==========================================================
-// 静的メンバ変数
-//==========================================================
-std::vector<std::shared_ptr<GameObject>> GameManager::s_emptyWorldObjects;
+    std::vector<std::shared_ptr<GameObject>> GameManager::s_emptyWorldObjects;
 
-//==========================================================
-// コンストラクタ・デストラクタ
-//==========================================================
-GameManager::GameManager() {
-}
-
-GameManager::~GameManager() {
-}
-
-//==========================================================
-// シングルトンインスタンス取得
-//==========================================================
-GameManager& GameManager::Instance() {
-    static GameManager instance;
-    return instance;
-}
-
-//==========================================================
-// ローカルプレイヤー取得
-//==========================================================
-GameObject* GameManager::GetLocalPlayerGameObject() const {
-    // ::Game:: で名前空間のフリー関数を明示的に呼び出し（メンバ関数との再帰を防止）
-    return ::Game::GetLocalPlayerGameObject();
-}
-
-//==========================================================
-// ワールドオブジェクト取得
-//==========================================================
-std::vector<std::shared_ptr<GameObject>>& GameManager::GetWorldObjects() {
-    SceneGame* sg = m_game.GetSceneGame();
-    if (sg) return sg->GetWorldObjects();
-    return s_emptyWorldObjects;
-}
-
-const std::vector<std::shared_ptr<GameObject>>& GameManager::GetWorldObjects() const {
-    const SceneGame* sg = m_game.GetSceneGame();
-    if (sg) return sg->GetWorldObjects();
-    return s_emptyWorldObjects;
-}
-
-//==========================================================
-// マップ・マップレンダラー取得
-//==========================================================
-Map* GameManager::GetMap() const {
-    const SceneGame* sg = m_game.GetSceneGame();
-    if (sg) return sg->GetMap();
-    return nullptr;
-}
-
-MapRenderer* GameManager::GetMapRenderer() const {
-    const SceneGame* sg = m_game.GetSceneGame();
-    if (sg) return sg->GetMapRenderer();
-    return nullptr;
-}
-
-//==========================================================
-// 初期化処理
-//==========================================================
-HRESULT GameManager::Initialize() {
-
-#ifdef _DEBUG
-    {
-        // --- デバッグ用メモリリークチェック有効化 ---
-        int flags = _CrtSetDbgFlag(_CRTDBG_REPORT_FLAG);
-        flags |= _CRTDBG_ALLOC_MEM_DF | _CRTDBG_CHECK_ALWAYS_DF | _CRTDBG_LEAK_CHECK_DF;
-        _CrtSetDbgFlag(flags);
-    }
-#endif
-
-    // --- シーン初期化（ゲームシーンから開始） ---
-    if (FAILED(m_game.Initialize(SceneType::GAME))) {
-        return E_FAIL;
+    GameManager::GameManager() {
     }
 
-    return S_OK;
-}
+    GameManager::~GameManager() {
+    }
 
-//==========================================================
-// 終了処理
-//==========================================================
-void GameManager::Finalize() {
-    m_game.Finalize();
-}
+    GameManager& GameManager::Instance() {
+        static GameManager instance;
+        return instance;
+    }
 
-//==========================================================
-// 更新処理
-//==========================================================
-void GameManager::Update() {
-    // --- シーンの更新 ---
-    m_game.Update();
+    GameObject* GameManager::GetLocalPlayerGameObject() const {
+        return ::Game::GetLocalPlayerGameObject();
+    }
 
-    // --- FPS計測 ---
-    static int frameCount = 0;
-    static double lastFpsTime = SystemTimer_GetTime();
+    std::vector<std::shared_ptr<GameObject>>& GameManager::GetWorldObjects() {
+        SceneGame* sg = m_game.GetSceneGame();
+        if (sg) return sg->GetWorldObjects();
+        return s_emptyWorldObjects;
+    }
 
-    frameCount++;
-    double currentTime = SystemTimer_GetTime();
-    double elapsed = currentTime - lastFpsTime;
+    const std::vector<std::shared_ptr<GameObject>>& GameManager::GetWorldObjects() const {
+        const SceneGame* sg = m_game.GetSceneGame();
+        if (sg) return sg->GetWorldObjects();
+        return s_emptyWorldObjects;
+    }
 
-    if (elapsed >= 0.5) {
-        m_fps = frameCount / elapsed;
-        frameCount = 0;
-        lastFpsTime = currentTime;
+    Map* GameManager::GetMap() const {
+        const SceneGame* sg = m_game.GetSceneGame();
+        if (sg) return sg->GetMap();
+        return nullptr;
+    }
 
-        // --- ウィンドウタイトルにFPS表示 ---
-        char title[256];
-        sprintf_s(title, "3Dtest - FPS: %.1f", m_fps);
-        HWND hWnd = FindWindowA(CLASS_NAME, nullptr);
-        if (hWnd) {
-            SetWindowTextA(hWnd, title);
+    MapRenderer* GameManager::GetMapRenderer() const {
+        const SceneGame* sg = m_game.GetSceneGame();
+        if (sg) return sg->GetMapRenderer();
+        return nullptr;
+    }
+
+    void GameManager::SpawnFluidParticles(const DirectX::XMFLOAT3& position, uint32_t count, float radius) {
+        if (m_fluid) {
+            m_fluid->SpawnParticles(position, count, radius);
         }
     }
-}
 
-//==========================================================
-// 描画処理
-//==========================================================
-void GameManager::Draw() {
-    Engine::Renderer::GetInstance().Clear();
+    HRESULT GameManager::Initialize() {
+#ifdef _DEBUG
+        {
+            int flags = _CrtSetDbgFlag(_CRTDBG_REPORT_FLAG);
+            flags |= _CRTDBG_ALLOC_MEM_DF | _CRTDBG_CHECK_ALWAYS_DF | _CRTDBG_LEAK_CHECK_DF;
+            _CrtSetDbgFlag(flags);
+        }
+#endif
 
-    // --- 現在のシーンの描画 ---
-    m_game.Draw();
+        if (FAILED(m_game.Initialize(SceneType::GAME))) {
+            return E_FAIL;
+        }
 
-    Engine::Renderer::GetInstance().Present();
-}
+        //==========================================================
+        // SPH流体初期化
+        //==========================================================
+        {
+            auto& renderer = Engine::Renderer::GetInstance();
+
+            m_fluid = std::make_unique<Engine::SPHFluid>();
+
+            if (!m_fluid->Initialize(renderer.GetDevice(), 5000)) {  // 粒子数を増やす
+                OutputDebugStringA("SPHFluid: Initialize failed\n");
+                m_fluid.reset();
+            } else {
+                OutputDebugStringA("SPHFluid: Initialize success!\n");
+
+                // 境界を広く設定（マップ全体をカバー）
+                m_fluid->SetBoundary(
+                    DirectX::XMFLOAT3(-30.0f, -30.0f, -30.0f),
+                    DirectX::XMFLOAT3(30.0f, 30.0f, 30.0f)
+                );
+
+                // 衝突判定を有効化
+                m_fluid->SetMapCollisionEnabled(true);
+                m_fluid->SetPlayerCollisionEnabled(true);
+
+                // 色・サイズ設定
+                m_fluid->SetParticleColor(DirectX::XMFLOAT4(0.3f, 0.7f, 1.0f, 0.6f));  // 明るい水色
+                m_fluid->SetParticleScale(0.06f);
+
+                // smoothingRadiusも小さく（水鉄砲のスケール感に合わせる）
+                auto& params = m_fluid->GetParams();
+                params.smoothingRadius = 0.3f;   // 1.0f → 0.3f
+                params.gasConstant = 3.0f;
+
+                // スクリーンスペース有効化
+                m_fluid->SetScreenSpaceEnabled(true);
+            }
+        }
+
+        return S_OK;
+    }
+
+    void GameManager::Finalize() {
+        if (m_fluid) {
+            m_fluid->Finalize();
+            m_fluid.reset();
+        }
+
+        m_game.Finalize();
+    }
+
+    void GameManager::Update() {
+        m_game.Update();
+
+        // 流体更新
+        if (m_fluid) {
+            auto& renderer = Engine::Renderer::GetInstance();
+
+            // プレイヤーのコライダー情報をSPHに渡す
+            std::vector<Engine::SPHFluid::CollisionBox> playerBoxes;
+            SceneGame* sg = m_game.GetSceneGame();
+            if (sg) {
+                // ローカルプレイヤーを取得（SceneGameから全プレイヤーにアクセスできる場合）
+                auto& worldObjects = sg->GetWorldObjects();
+                for (auto& obj : worldObjects) {
+                    if (obj && obj->boxCollider) {
+                        XMFLOAT3 bmin = obj->boxCollider->GetMin();
+                        XMFLOAT3 bmax = obj->boxCollider->GetMax();
+                        Engine::SPHFluid::CollisionBox box;
+                        box.center = {
+                            (bmin.x + bmax.x) * 0.5f,
+                            (bmin.y + bmax.y) * 0.5f,
+                            (bmin.z + bmax.z) * 0.5f
+                        };
+                        box.halfSize = {
+                            (bmax.x - bmin.x) * 0.5f,
+                            (bmax.y - bmin.y) * 0.5f,
+                            (bmax.z - bmin.z) * 0.5f
+                        };
+                        playerBoxes.push_back(box);
+                    }
+                }
+            }
+            m_fluid->SetPlayerColliders(playerBoxes);
+
+            m_fluid->Update(renderer.GetContext(), 1.0f / 60.0f);
+        }
+
+        // FPS計測
+        static int frameCount = 0;
+        static double lastFpsTime = SystemTimer_GetTime();
+
+        frameCount++;
+        double currentTime = SystemTimer_GetTime();
+        double elapsed = currentTime - lastFpsTime;
+
+        if (elapsed >= 0.5) {
+            m_fps = frameCount / elapsed;
+            frameCount = 0;
+            lastFpsTime = currentTime;
+
+            char title[256];
+            uint32_t particleCount = m_fluid ? m_fluid->GetParticleCount() : 0;
+            sprintf_s(title, "BREAK_SHOOTING - FPS: %.1f | Particles: %u", m_fps, particleCount);
+
+            HWND hWnd = FindWindowA(CLASS_NAME, nullptr);
+            if (hWnd) {
+                SetWindowTextA(hWnd, title);
+            }
+        }
+    }
+
+    void GameManager::Draw() {
+        Engine::Renderer::GetInstance().Clear();
+
+        m_game.Draw();
+
+        // 流体描画
+        if (m_fluid) {
+            auto& renderer = Engine::Renderer::GetInstance();
+
+            // ★ ゲームカメラから直接情報を取得
+            Camera& cam = GetMainCamera();
+            XMFLOAT3 camPos = cam.position;
+            XMFLOAT3 camAt = cam.Atposition;
+            XMFLOAT3 camUp = cam.Upvector;
+            float fov = XMConvertToRadians(cam.fov);
+            float aspect = (float)renderer.GetScreenWidth() / (float)renderer.GetScreenHeight();
+
+            m_fluid->SetCamera(camPos, camAt, camUp, fov, aspect, cam.nearclip, cam.farclip);
+
+            renderer.SetDepthEnable(true);
+            m_fluid->Draw(renderer.GetContext());
+        }
+
+        Engine::Renderer::GetInstance().Present();
+    }
 
 } // namespace Game

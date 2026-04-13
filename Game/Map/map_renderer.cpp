@@ -111,7 +111,7 @@ HRESULT MapRenderer::Initialize(Map* pMap)
     // --- テクスチャの読み込み ---
     DirectX::TexMetadata metadata;
     DirectX::ScratchImage image;
-    HRESULT hr = DirectX::LoadFromWICFile(L"resource/texture/white.png", DirectX::WIC_FLAGS_NONE, &metadata, image);
+    HRESULT hr = DirectX::LoadFromWICFile(L"resource/texture/white.jpg", DirectX::WIC_FLAGS_NONE, &metadata, image);
     if (SUCCEEDED(hr)) {
         hr = DirectX::CreateShaderResourceView(Engine::GetDevice(), image.GetImages(),
             image.GetImageCount(), metadata, &m_Texture);
@@ -218,8 +218,8 @@ void MapRenderer::Draw()
 
     Engine::MaterialData material;
     ZeroMemory(&material, sizeof(material));
-    material.ambient = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
     material.diffuse = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
+    material.ambient = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
     material.specular = XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f);
     material.emission = XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f);
     {
@@ -227,6 +227,23 @@ void MapRenderer::Draw()
         ID3D11Buffer* buf = Engine::Renderer::GetInstance().GetMaterialBuffer();
         if (ctx && buf) {
             ctx->UpdateSubresource(buf, 0, nullptr, &material, 0, 0);
+        }
+    }
+
+    // --- マテリアル設定 ---
+    ZeroMemory(&material, sizeof(material));
+    material.diffuse = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
+    material.ambient = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
+    material.specular = XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f);
+    material.emission = XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f);
+
+    {
+        ID3D11DeviceContext* ctx = Engine::Renderer::GetInstance().GetContext();
+        ID3D11Buffer* buf = Engine::Renderer::GetInstance().GetMaterialBuffer();
+        if (ctx && buf) {
+            ctx->UpdateSubresource(buf, 0, nullptr, &material, 0, 0);
+            ctx->VSSetConstantBuffers(1, 1, &buf);  // 頂点シェーダー用
+            ctx->PSSetConstantBuffers(1, 1, &buf);  // ピクセルシェーダー用
         }
     }
 
