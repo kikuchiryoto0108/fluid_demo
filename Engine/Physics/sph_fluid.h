@@ -91,6 +91,9 @@ namespace Engine {
 
         SPHParams& GetParams() { return m_params; }
 
+        // シーン深度SRVを外部から設定するためのインターフェース
+        void SetSceneDepthSRV(ID3D11ShaderResourceView* srv) { m_sceneDepthSRV = srv; }
+
     private:
         void SimulateCPU(float dt);
         float Poly6Kernel(float r, float h);
@@ -191,6 +194,9 @@ namespace Engine {
         // Samplers
         ComPtr<ID3D11SamplerState> m_pPointSampler;
         ComPtr<ID3D11SamplerState> m_pLinearSampler;
+
+        // シーン深度テクスチャ（壁の奥の水を棄却するために使用）
+        ComPtr<ID3D11ShaderResourceView> m_sceneDepthSRV;
     };
 
 } // namespace Engine

@@ -53,6 +53,7 @@ namespace Engine {
         uint32_t              GetScreenWidth()    const { return m_screenWidth; }
         uint32_t              GetScreenHeight()   const { return m_screenHeight; }
         IDXGISwapChain* GetSwapChain()      const { return m_pSwapChain.Get(); }
+        ID3D11ShaderResourceView* GetDepthSRV() const { return m_pDepthSRV.Get(); }
 
         //=====================================================
         // 2D UI描画関数
@@ -153,6 +154,8 @@ namespace Engine {
 
         // UI初期化済みフラグ
         bool m_uiInitialized = false;
+
+        ComPtr<ID3D11ShaderResourceView> m_pDepthSRV;  // シーン深度をシェーダーから読むためのSRV
     };
 
     // グローバルアクセス関数

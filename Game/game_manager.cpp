@@ -207,6 +207,10 @@ namespace Game {
 
             m_fluid->SetCamera(camPos, camAt, camUp, fov, aspect, cam.nearclip, cam.farclip);
 
+            // ★ シーン深度バッファのSRVを流体に渡す（壁の奥の水を棄却するため）
+            ID3D11ShaderResourceView* sceneDepthSRV = renderer.GetDepthSRV();
+            m_fluid->SetSceneDepthSRV(sceneDepthSRV);
+
             renderer.SetDepthEnable(true);
             m_fluid->Draw(renderer.GetContext());
         }

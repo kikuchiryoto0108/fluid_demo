@@ -14,9 +14,10 @@ cbuffer CBFinal : register(b0)
     float    RefractScale;
 };
 
-Texture2D<float> BlurredDepth : register(t0);
-Texture2D<float> ThicknessTex : register(t1);
-SamplerState     LinearSamp   : register(s0);
+Texture2D<float> BlurredDepth  : register(t0);
+Texture2D<float> ThicknessTex  : register(t1);
+Texture2D<float> SceneDepthTex : register(t2);  // シーン深度バッファ
+SamplerState     LinearSamp    : register(s0);
 
 struct VS_QUAD_OUT
 {
@@ -43,8 +44,13 @@ float4 PS_Final(VS_QUAD_OUT input) : SV_Target0
     float depth = BlurredDepth.SampleLevel(LinearSamp, input.TexCoord, 0);
     float thickness = ThicknessTex.SampleLevel(LinearSamp, input.TexCoord, 0);
 
-    // ★ 空判定を反転（1.0が空）
+    // 空判定を反転（1.0初期）
     if (depth > 0.9999 && thickness < 0.001)
+        return float4(0, 0, 0, 0);
+
+    // シーン深度との比較 壁の奥にある水を棄却
+    float sceneDepth = SceneDepthTex.SampleLevel(LinearSamp, input.TexCoord, 0);
+    if (depth > sceneDepth)
         return float4(0, 0, 0, 0);
 
     if (depth > 0.9999)
@@ -102,9 +108,9 @@ float4 PS_Final(VS_QUAD_OUT input) : SV_Target0
                  + waterCol * fresnel * 0.3
                  + float3(0.05, 0.08, 0.12);
 
-    // アルファ（水は透明に）
+    // アルファ（端は透明に）
     float alpha = saturate(depthFactor * 0.5 + 0.3);
-    alpha *= (1.0 - rim * 0.5);  // 端を透明に
+    alpha *= (1.0 - rim * 0.5);  // 端を透明化
     alpha = clamp(alpha, 0.2, 0.8);
 
     return float4(color, alpha);
