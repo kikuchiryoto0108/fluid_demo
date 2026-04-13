@@ -1165,9 +1165,10 @@ namespace Engine {
         ctx->PSGetSamplers(0, 1, prevSamp0.GetAddressOf());
         ctx->PSGetSamplers(1, 1, prevSamp1.GetAddressOf());
 
-        ComPtr<ID3D11ShaderResourceView> prevSRV0, prevSRV1;
+        ComPtr<ID3D11ShaderResourceView> prevSRV0, prevSRV1, prevSRV2;
         ctx->PSGetShaderResources(0, 1, prevSRV0.GetAddressOf());
         ctx->PSGetShaderResources(1, 1, prevSRV1.GetAddressOf());
+        ctx->PSGetShaderResources(2, 1, prevSRV2.GetAddressOf());
 
         ComPtr<ID3D11Buffer> prevVB0, prevVB1, prevIB;
         UINT prevStride0, prevStride1, prevOff0, prevOff1;
@@ -1199,7 +1200,7 @@ namespace Engine {
         halfVP.MaxDepth = 1.0f;
 
         // 全パスで共通の設定
-        ctx->RSSetState(m_pNoCullRS.Get());                    // 裏面もも描画
+        ctx->RSSetState(m_pNoCullRS.Get());                    // 裏面も描画
         ctx->OMSetDepthStencilState(m_pDepthDisabledState.Get(), 0);  // 深度テストなし
 
         ID3D11ShaderResourceView* nullSRV = nullptr;
@@ -1457,6 +1458,8 @@ namespace Engine {
         //   4. スペキュラハイライト（キラキラ）
         //   5. 厚みに応じた色の補間（薄い=水色、厚い=深い青）
         //   6. アルファブレンドで背景と合成
+        //
+        // シーン深度テクスチャ(t2)をバインドし、壁の奥の水を棄却する
         {
             // 描画先を元のバックバッファに戻す
             ID3D11RenderTargetView* rtv = prevRTV.Get();
@@ -1490,8 +1493,14 @@ namespace Engine {
             // 入力テクスチャ:
             //   t0: ブラー済み深度（blurRT2 = 4パスブラー後の結果）
             //   t1: 厚みテクスチャ
-            ID3D11ShaderResourceView* srvs[2] = { m_blurRT2->GetSRV(), m_thicknessRT->GetSRV() };
-            ctx->PSSetShaderResources(0, 2, srvs);
+            //   t2: シーン深度テクスチャ（壁の奥の水を棄却するため）
+            ID3D11ShaderResourceView* sceneSRV = m_sceneDepthSRV.Get();
+            ID3D11ShaderResourceView* srvs[3] = {
+                m_blurRT2->GetSRV(),
+                m_thicknessRT->GetSRV(),
+                sceneSRV  // シーン深度
+            };
+            ctx->PSSetShaderResources(0, 3, srvs);
             ID3D11SamplerState* samps[2] = { m_pPointSampler.Get(), m_pLinearSampler.Get() };
             ctx->PSSetSamplers(0, 2, samps);
 
@@ -1502,8 +1511,8 @@ namespace Engine {
             ctx->Draw(3, 0);
 
             // テクスチャをアンバインド
-            ID3D11ShaderResourceView* nullSRVs[2] = { nullptr, nullptr };
-            ctx->PSSetShaderResources(0, 2, nullSRVs);
+            ID3D11ShaderResourceView* nullSRVs[3] = { nullptr, nullptr, nullptr };
+            ctx->PSSetShaderResources(0, 3, nullSRVs);
         }
 
         // ==========================================
@@ -1530,8 +1539,8 @@ namespace Engine {
         ctx->PSSetConstantBuffers(0, 1, prevPSCB0.GetAddressOf());
         ctx->PSSetSamplers(0, 1, prevSamp0.GetAddressOf());
         ctx->PSSetSamplers(1, 1, prevSamp1.GetAddressOf());
-        ID3D11ShaderResourceView* rSRV[2] = { prevSRV0.Get(), prevSRV1.Get() };
-        ctx->PSSetShaderResources(0, 2, rSRV);
+        ID3D11ShaderResourceView* rSRV[3] = { prevSRV0.Get(), prevSRV1.Get(), prevSRV2.Get() };
+        ctx->PSSetShaderResources(0, 3, rSRV);
 
         // デバッグログ（5秒に1回くらい）
         static int frameCount = 0;

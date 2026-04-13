@@ -84,23 +84,39 @@ namespace Engine {
         m_pDevice->CreateRenderTargetView(pBackBuffer.Get(), nullptr, &m_pRenderTargetView);
 
         // --- 深度ステンシルテクスチャとビューを作成 ---
-        D3D11_TEXTURE2D_DESC td = {};
-        td.Width = m_screenWidth;
-        td.Height = m_screenHeight;
-        td.MipLevels = 1;
-        td.ArraySize = 1;
-        td.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
-        td.SampleDesc.Count = 1;
-        td.Usage = D3D11_USAGE_DEFAULT;
-        td.BindFlags = D3D11_BIND_DEPTH_STENCIL;
+        //    TYPELESS フォーマットで作成し、DSVとSRVの両方を持たせる
+        //    これにより流体シェーダーからシーン深度を読んで
+        //    壁の奥の水を棄却できるようになる
+        {
+            D3D11_TEXTURE2D_DESC td = {};
+            td.Width = m_screenWidth;
+            td.Height = m_screenHeight;
+            td.MipLevels = 1;
+            td.ArraySize = 1;
+            td.Format = DXGI_FORMAT_R24G8_TYPELESS;  // TYPELESSで作成
+            td.SampleDesc.Count = 1;
+            td.Usage = D3D11_USAGE_DEFAULT;
+            td.BindFlags = D3D11_BIND_DEPTH_STENCIL | D3D11_BIND_SHADER_RESOURCE;  // 両方バインド
 
-        ComPtr<ID3D11Texture2D> pDepthTexture;
-        m_pDevice->CreateTexture2D(&td, nullptr, &pDepthTexture);
+            ComPtr<ID3D11Texture2D> pDepthTexture;
+            hr = m_pDevice->CreateTexture2D(&td, nullptr, &pDepthTexture);
+            if (FAILED(hr)) return false;
 
-        D3D11_DEPTH_STENCIL_VIEW_DESC dsvd = {};
-        dsvd.Format = td.Format;
-        dsvd.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2D;
-        m_pDevice->CreateDepthStencilView(pDepthTexture.Get(), &dsvd, &m_pDepthStencilView);
+            // DSV — 深度ステンシルビュー（通常の深度テストで使う）
+            D3D11_DEPTH_STENCIL_VIEW_DESC dsvd = {};
+            dsvd.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;  // DSV用フォーマット
+            dsvd.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2D;
+            hr = m_pDevice->CreateDepthStencilView(pDepthTexture.Get(), &dsvd, &m_pDepthStencilView);
+            if (FAILED(hr)) return false;
+
+            // SRV — シェーダーリソースビュー（流体シェーダーから深度を読む）
+            D3D11_SHADER_RESOURCE_VIEW_DESC srvd = {};
+            srvd.Format = DXGI_FORMAT_R24_UNORM_X8_TYPELESS;  // SRV用フォーマット（深度部分だけ読む）
+            srvd.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+            srvd.Texture2D.MipLevels = 1;
+            hr = m_pDevice->CreateShaderResourceView(pDepthTexture.Get(), &srvd, &m_pDepthSRV);
+            if (FAILED(hr)) return false;
+        }
 
         // レンダーターゲットと深度バッファをバインド
         ID3D11RenderTargetView* rtv = m_pRenderTargetView.Get();
@@ -268,12 +284,14 @@ namespace Engine {
         m_pPixelShader.Reset();
         m_pDepthStateEnable.Reset();
         m_pDepthStateDisable.Reset();
+        m_pDepthSRV.Reset();           // ★ 追加
         m_pDepthStencilView.Reset();
         m_pRenderTargetView.Reset();
         m_pSwapChain.Reset();
         m_pContext.Reset();
         m_pDevice.Reset();
     }
+
 
     //==========================================================
     // Clear - 画面と深度バッファをクリアする
