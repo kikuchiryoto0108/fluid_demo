@@ -101,18 +101,15 @@ bool Map::IsValidPosition(int x, int y, int z) const
 //==========================================================
 // サンプルマップデータの作成
 //==========================================================
-void Map::CreateSampleMap()
-{
+void Map::CreateSampleMap() {
     // --- 50x50x50のサンプルマップデータ ---
-    
+
     // 底面層（y=0）- 全面の床
     for (int z = 0; z < MAP_DEPTH; z++) {
         for (int x = 0; x < MAP_WIDTH; x++) {
-mapData[0][z][x] = 1;  // 底面全体を壁で
+            mapData[0][z][x] = 1;
         }
     }
-    // 中央に柱を追加
-    mapData[0][2][2] = 1;
 
     // 中間層（y=1,2,3）- 部分的な壁と構造物
     for (int y = 1; y < MAP_HEIGHT - 1; y++) {
@@ -124,10 +121,9 @@ mapData[0][z][x] = 1;  // 底面全体を壁で
 
         // 中央の構造物
         if (y == 1 || y == 2) {
-            mapData[y][2][2] = 1;  // 柱を上方向に延長
+            mapData[y][2][2] = 1;
         }
-        
-        // レベル2で一部の壁を追加
+
         if (y == 2) {
             mapData[y][1][2] = 1;
             mapData[y][3][2] = 1;
@@ -136,15 +132,41 @@ mapData[0][z][x] = 1;  // 底面全体を壁で
         }
     }
 
-    // 最上層（y=4）- 天井のような構造
+    // 最上層
     for (int z = 0; z < MAP_DEPTH; z++) {
         for (int x = 0; x < MAP_WIDTH; x++) {
             if ((x == 0 || x == MAP_WIDTH - 1) && (z == 0 || z == MAP_DEPTH - 1)) {
-                mapData[MAP_HEIGHT - 1][z][x] = 1;  // 四隅のみ
+                mapData[MAP_HEIGHT - 1][z][x] = 1;
             }
         }
     }
+
+    // ★★★ 中央に2x2の高さ1の囲い ★★★
+    // マップ中央 = (25, 25) → 底面(y=0)の上、y=1に壁を作る
+    // 内側空間: x=24,25 z=24,25 （2x2）
+    // 壁は外周: x=23〜26, z=23〜26 の枠
+    int cx = MAP_WIDTH / 2;   // 25
+    int cz = MAP_DEPTH / 2;   // 25
+    int wallY = 1;             // 底面の1つ上
+
+    // 前壁 (z = cz-2 = 23): x = cx-2 〜 cx+1 (23〜26)
+    for (int x = cx - 2; x <= cx + 1; x++) {
+        mapData[wallY][cz - 2][x] = 1;
+    }
+    // 後壁 (z = cz+1 = 26)
+    for (int x = cx - 2; x <= cx + 1; x++) {
+        mapData[wallY][cz + 1][x] = 1;
+    }
+    // 左壁 (x = cx-2 = 23): z = cz-1 〜 cz (24〜25) ※角は前後壁で配置済み
+    for (int z = cz - 1; z <= cz; z++) {
+        mapData[wallY][z][cx - 2] = 1;
+    }
+    // 右壁 (x = cx+1 = 26)
+    for (int z = cz - 1; z <= cz; z++) {
+        mapData[wallY][z][cx + 1] = 1;
+    }
 }
+
 
 //==========================================================
 // 地面の高さを取得

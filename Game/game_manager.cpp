@@ -103,7 +103,12 @@ namespace Game {
 
                 // 色・サイズ設定
                 m_fluid->SetParticleColor(DirectX::XMFLOAT4(0.3f, 0.7f, 1.0f, 0.6f));  // 明るい水色
-                m_fluid->SetParticleScale(0.02f);
+                m_fluid->SetParticleScale(0.06f);
+
+                // smoothingRadiusも小さく（水鉄砲のスケール感に合わせる）
+                auto& params = m_fluid->GetParams();
+                params.smoothingRadius = 0.3f;   // 1.0f → 0.3f
+                params.gasConstant = 3.0f;
 
                 // スクリーンスペース有効化
                 m_fluid->SetScreenSpaceEnabled(true);

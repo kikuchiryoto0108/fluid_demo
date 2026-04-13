@@ -43,10 +43,11 @@ float4 PS_Final(VS_QUAD_OUT input) : SV_Target0
     float depth = BlurredDepth.SampleLevel(LinearSamp, input.TexCoord, 0);
     float thickness = ThicknessTex.SampleLevel(LinearSamp, input.TexCoord, 0);
 
-    if (depth < 0.0001 && thickness < 0.001)
+    // ★ 空判定を反転（1.0が空）
+    if (depth > 0.9999 && thickness < 0.001)
         return float4(0, 0, 0, 0);
 
-    if (depth < 0.0001)
+    if (depth > 0.9999)
     {
         return float4(0.15, 0.35, 0.6, thickness * 0.3);
     }
@@ -82,7 +83,7 @@ float4 PS_Final(VS_QUAD_OUT input) : SV_Target0
     float spec = pow(NdotH, 128.0) * 2.0;
     float specSoft = pow(NdotH, 24.0) * 0.3;
 
-    // リムライト（弱めに、透明度に影響させる）
+    // リムライト（控えめに、透明度に影響させる）
     float rim = pow(1.0 - NdotV, 4.0);
 
     // 水の色
@@ -94,16 +95,16 @@ float4 PS_Final(VS_QUAD_OUT input) : SV_Target0
     // ディフューズ
     float diffuse = NdotL * 0.4 + 0.6;
 
-    // 最終色（リムは色ではなく透明度で表現）
+    // 最終色（透明度は色ではなく透明度で表現）
     float3 color = waterCol * diffuse * 0.6
                  + float3(1, 1, 1) * spec
                  + float3(0.8, 0.9, 1.0) * specSoft
                  + waterCol * fresnel * 0.3
                  + float3(0.05, 0.08, 0.12);
 
-    // アルファ（縁は透明に）
+    // アルファ（水は透明に）
     float alpha = saturate(depthFactor * 0.5 + 0.3);
-    alpha *= (1.0 - rim * 0.5);  // 縁を透明に
+    alpha *= (1.0 - rim * 0.5);  // 端を透明に
     alpha = clamp(alpha, 0.2, 0.8);
 
     return float4(color, alpha);

@@ -277,9 +277,9 @@ void Player::Update(float deltaTime) {
     visualObject.markBufferForUpdate();
 
     // --- 銃の更新 ---
-    if (m_gun) {
-        m_gun->Update(this, deltaTime);
-    }
+    //if (m_gun) {
+    //    m_gun->Update(this, deltaTime);
+    //}
 
     // --- 水鉄砲の更新 ---
     if (m_waterGun) {

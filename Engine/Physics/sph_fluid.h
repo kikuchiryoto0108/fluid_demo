@@ -186,6 +186,7 @@ namespace Engine {
         ComPtr<ID3D11BlendState>        m_pAdditiveBlendState;
         ComPtr<ID3D11DepthStencilState> m_pDepthDisabledState;
         ComPtr<ID3D11RasterizerState>   m_pNoCullRS;
+        ComPtr<ID3D11BlendState> m_pMinBlendState;
 
         // Samplers
         ComPtr<ID3D11SamplerState> m_pPointSampler;

@@ -366,9 +366,6 @@
     <None Include="shader.hlsl">
       <Filter>シェーダーファイル</Filter>
     </None>
-    <None Include="Engine\Physics\sph_compute_shader.hlsl">
-      <Filter>シェーダーファイル</Filter>
-    </None>
     <None Include="fluid_blur.hlsl">
       <Filter>シェーダーファイル</Filter>
     </None>
@@ -379,6 +376,9 @@
       <Filter>シェーダーファイル</Filter>
     </None>
     <None Include="fluid_thickness.hlsl">
+      <Filter>シェーダーファイル</Filter>
+    </None>
+    <None Include="sph_compute_shader.hlsl">
       <Filter>シェーダーファイル</Filter>
     </None>
   </ItemGroup>
