@@ -28,7 +28,7 @@ float PS_BilateralBlur(VS_OUT i) : SV_Target0
 {
     float center = DepthTex.SampleLevel(PointSamp, i.UV, 0);
     
-    // ★ 深度が1.0に近い = 何もない場所
+    // 深度が1.0に近い = 何もない場所
     if (center > 0.9999)
         return 1.0;
     
@@ -44,10 +44,10 @@ float PS_BilateralBlur(VS_OUT i) : SV_Target0
         float2 uv = i.UV + BlurDir * float(x) * 2.0;  // 2ピクセル飛ばし
         float s = DepthTex.SampleLevel(PointSamp, uv, 0);
         
-        // ★ 空ピクセルはスキップ
+        // 空ピクセルはスキップ
         if (s > 0.9999) continue;
         
-        // ★ 深度差によるバイラテラル重み
+        // 深度差によるバイラテラル重み
         float depthDiff = abs(s - center);
         float bilateralW = exp(-depthDiff * depthDiff * BlurDepthFalloff);
         
@@ -55,7 +55,7 @@ float PS_BilateralBlur(VS_OUT i) : SV_Target0
         float dist = float(x) * BlurScale;
         float spatialW = exp(-dist * dist * 0.1);
         
-        // ★ 空間×深度の重み
+        // 空間×深度の重み
         float w = spatialW * bilateralW;
         
         sum += s * w;
@@ -76,7 +76,7 @@ float PS_GaussianBlur(VS_OUT i) : SV_Target0
         float2 uv = i.UV + BlurDir * float(x);
         float s = DepthTex.SampleLevel(PointSamp, uv, 0);
         
-        // ★ 空ピクセルはスキップ
+        // 空ピクセルはスキップ
         if (s > 0.9999) continue;
         
         float w = exp(-float(x * x) * 0.1);
@@ -85,7 +85,7 @@ float PS_GaussianBlur(VS_OUT i) : SV_Target0
         wsum += w;
     }
     
-    // ★ 有効サンプルがなければ空を返す
+    // 有効サンプルがなければ空を返す
     if (wsum < 0.001) return 1.0;
     return sum / wsum;
 }
